@@ -5,5 +5,7 @@ RUN cargo install --path .
 
 FROM debian:buster-slim
 RUN apt-get update && rm -rf /var/lib/apt/lists/*
+WORKDIR /tmp
 COPY --from=builder /usr/local/cargo/bin/replybot /usr/local/bin/replybot
+COPY config.json .
 CMD ["replybot"]

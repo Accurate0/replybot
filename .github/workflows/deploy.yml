@@ -28,7 +28,7 @@ jobs:
         run: sed -i 's/\[DISCORD_TOKEN\]/${{ secrets.DISCORD_BOT_TOKEN }}/' config.json
 
       - name: docker build
-        run: docker build . -t ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-southeast-2.amazonaws.com/replybot:$GITHUB_SHA
+        run: docker build . -t ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-southeast-2.amazonaws.com/replybot
 
       - name: docker auth
         env:
@@ -37,7 +37,7 @@ jobs:
         run: aws ecr get-login-password --region ap-southeast-2 | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-southeast-2.amazonaws.com
 
       - name: docker push
-        run: docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-southeast-2.amazonaws.com/replybot:$GITHUB_SHA
+        run: docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-southeast-2.amazonaws.com/replybot
 
   deploy:
     runs-on: ubuntu-latest
