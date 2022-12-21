@@ -1,0 +1,50 @@
+name: lambda
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: rust-toolchain
+        uses: actions-rs/toolchain@v1.0.6
+        with:
+          profile: minimal
+          toolchain: stable
+          target: x86_64-unknown-linux-musl
+
+      - uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: modify config
+        run: sed -i 's/\[DISCORD_TOKEN\]/{{ secrets.DISCORD_BOT_TOKEN }}/' config.json
+
+      - name: docker build
+        run: docker build . -t {{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-southeast-2.amazonaws.com/replybot:$GITHUB_SHA
+
+      - name: docker auth
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: aws ecr get-login-password --region ap-southeast-2 | docker login --username AWS --password-stdin {{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-southeast-2.amazonaws.com
+
+      - name: docker push
+        run: docker push {{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-southeast-2.amazonaws.com/replybot:$GITHUB_SHA
+
+  deploy:
+    runs-on: ubuntu-latest
+    depends-on: [build]
+    steps:
+      - name: deploy container
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: aws ecs update-service --region ap-southeast-2 --cluster replybot-cluster --service replybot-service --force-new-deployment

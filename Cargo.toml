@@ -1,0 +1,18 @@
+[package]
+name = "replybot"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.68"
+config = "0.13.3"
+futures = "0.3.25"
+serde = "1.0.151"
+tokio = { version = "1.23.0", features = ["rt", "macros", "rt-multi-thread"] }
+twilight-cache-inmemory = "0.14.0"
+twilight-gateway = "0.14.0"
+twilight-http = "0.14.0"
+twilight-model = "0.14.0"
+
+[[bin]]
+name = "replybot"
