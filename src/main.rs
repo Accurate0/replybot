@@ -1,15 +1,26 @@
+use client::get_http_client_with_headers;
 use config::{Config, Environment, File, FileFormat};
 use futures::stream::StreamExt;
+use http::HeaderMap;
+use logging::setup_logging;
+use rand::rngs::SmallRng;
+use rand::{Rng, SeedableRng};
+use reqwest_middleware::ClientWithMiddleware;
 use std::{error::Error, sync::Arc};
 use twilight_cache_inmemory::{InMemoryCache, ResourceType};
 use twilight_gateway::{Cluster, Event};
 use twilight_http::Client as HttpClient;
+use twilight_model::channel::message::allowed_mentions::AllowedMentionsBuilder;
 use twilight_model::gateway::Intents;
+use types::{OpenAICompletionRequest, OpenAICompletionResponse};
 
+mod client;
+mod logging;
 mod types;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    setup_logging();
     let config = Config::builder()
         .add_source(File::new("config.json", FileFormat::Json))
         .add_source(Environment::with_prefix("REPLYBOT"))
@@ -29,15 +40,30 @@ async fn main() -> anyhow::Result<()> {
         cluster_spawn.up().await;
     });
 
-    let http = Arc::new(HttpClient::new(config.discord_token));
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        "Authorization",
+        format!("Bearer {}", config.openai_api_key).parse()?,
+    );
+    headers.insert("Content-Type", "application/json".parse()?);
+
+    let discord_http = Arc::new(HttpClient::new(config.discord_token.to_owned()));
+    let http_client = Arc::new(get_http_client_with_headers(headers));
 
     let cache = InMemoryCache::builder()
         .resource_types(ResourceType::MESSAGE)
         .build();
 
+    let config = Arc::new(config);
     while let Some((shard_id, event)) = events.next().await {
         cache.update(&event);
-        tokio::spawn(handle_event(shard_id, event, Arc::clone(&http)));
+        tokio::spawn(handle_event(
+            shard_id,
+            event,
+            Arc::clone(&discord_http),
+            Arc::clone(&http_client),
+            Arc::clone(&config),
+        ));
     }
 
     Ok(())
@@ -46,16 +72,40 @@ async fn main() -> anyhow::Result<()> {
 async fn handle_event(
     shard_id: u64,
     event: Event,
-    http: Arc<HttpClient>,
+    discord: Arc<HttpClient>,
+    http: Arc<ClientWithMiddleware>,
+    config: Arc<types::Config>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let mut rng = SmallRng::from_entropy();
+
     match event {
-        Event::MessageCreate(msg) if msg.content == "!ping" => {
-            http.create_message(msg.channel_id)
-                .content("Pong!")?
-                .await?;
+        Event::MessageCreate(msg) if !msg.author.bot => {
+            if rng.gen_bool(config.trigger_chance) {
+                discord.create_typing_trigger(msg.channel_id).await?;
+
+                let response = http
+                    .post("https://api.openai.com/v1/completions")
+                    .json(&OpenAICompletionRequest {
+                        model: "text-davinci-003".to_owned(),
+                        prompt: [msg.content.to_owned()].to_vec(),
+                        max_tokens: 32,
+                    })
+                    .send()
+                    .await?
+                    .json::<OpenAICompletionResponse>()
+                    .await?;
+
+                discord
+                    .create_message(msg.channel_id)
+                    .reply(msg.id)
+                    .fail_if_not_exists(false)
+                    .allowed_mentions(Some(&AllowedMentionsBuilder::default().build()))
+                    .content(&response.choices.first().unwrap().text)?
+                    .await?;
+            }
         }
         Event::ShardConnected(_) => {
-            println!("Connected on shard {shard_id}");
+            log::info!("Connected on shard {shard_id}");
         }
         // Other events here...
         _ => {}

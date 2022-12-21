@@ -25,7 +25,9 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: modify config
-        run: sed -i 's/\[DISCORD_TOKEN\]/${{ secrets.DISCORD_BOT_TOKEN }}/' config.json
+        run: |
+        sed -i 's/\[DISCORD_TOKEN\]/${{ secrets.DISCORD_BOT_TOKEN }}/' config.json
+        sed -i 's/\[OPENAI_KEY\]/${{ secrets.OPENAI_API_KEY }}/' config.json
 
       - name: docker build
         run: docker build . -t ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-southeast-2.amazonaws.com/replybot
