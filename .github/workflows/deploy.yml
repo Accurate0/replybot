@@ -1,4 +1,4 @@
-name: lambda
+name: deploy
 on:
   workflow_dispatch:
   push:
@@ -41,7 +41,7 @@ jobs:
 
   deploy:
     runs-on: ubuntu-latest
-    depends-on: [build]
+    needs: build
     steps:
       - name: deploy container
         env:
