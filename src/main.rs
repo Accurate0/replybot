@@ -102,7 +102,7 @@ async fn handle_event(
                     .post("https://api.openai.com/v1/completions")
                     .json(&OpenAICompletionRequest {
                         model: "text-davinci-003".to_owned(),
-                        prompt: [msg.content.to_owned()].to_vec(),
+                        prompt: [config.prompt.to_owned(), msg.content.to_owned()].to_vec(),
                         max_tokens: 32,
                     })
                     .send()
