@@ -2,6 +2,7 @@ use client::get_http_client_with_headers;
 use config::{Config, Environment, File, FileFormat};
 use futures::lock::Mutex;
 use futures::stream::StreamExt;
+use futures::FutureExt;
 use http::HeaderMap;
 use lazy_static::lazy_static;
 use logging::setup_logging;
@@ -63,13 +64,21 @@ async fn main() -> anyhow::Result<()> {
     let config = Arc::new(config);
     while let Some((shard_id, event)) = events.next().await {
         cache.update(&event);
-        tokio::spawn(handle_event(
-            shard_id,
-            event,
-            Arc::clone(&discord_http),
-            Arc::clone(&http_client),
-            Arc::clone(&config),
-        ));
+        tokio::spawn(
+            handle_event(
+                shard_id,
+                event,
+                Arc::clone(&discord_http),
+                Arc::clone(&http_client),
+                Arc::clone(&config),
+            )
+            .then(|result| async {
+                match result {
+                    Ok(_) => {}
+                    Err(e) => log::error!("{}", e),
+                }
+            }),
+        );
     }
 
     Ok(())
@@ -86,6 +95,7 @@ async fn handle_event(
         Event::MessageCreate(msg) if !msg.author.bot => {
             let mut rng = RNG.lock().await;
             if rng.gen_bool(config.trigger_chance) {
+                log::info!("triggered reply for: {}", msg.author.id);
                 discord.create_typing_trigger(msg.channel_id).await?;
 
                 let response = http
