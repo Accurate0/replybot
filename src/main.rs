@@ -1,7 +1,9 @@
 use client::get_http_client_with_headers;
 use config::{Config, Environment, File, FileFormat};
+use futures::lock::Mutex;
 use futures::stream::StreamExt;
 use http::HeaderMap;
+use lazy_static::lazy_static;
 use logging::setup_logging;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
@@ -17,6 +19,10 @@ use types::{OpenAICompletionRequest, OpenAICompletionResponse};
 mod client;
 mod logging;
 mod types;
+
+lazy_static! {
+    static ref RNG: Arc<Mutex<SmallRng>> = Arc::new(Mutex::new(SmallRng::from_entropy()));
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -76,10 +82,9 @@ async fn handle_event(
     http: Arc<ClientWithMiddleware>,
     config: Arc<types::Config>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let mut rng = SmallRng::from_entropy();
-
     match event {
         Event::MessageCreate(msg) if !msg.author.bot => {
+            let mut rng = RNG.lock().await;
             if rng.gen_bool(config.trigger_chance) {
                 discord.create_typing_trigger(msg.channel_id).await?;
 
