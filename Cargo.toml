@@ -16,13 +16,14 @@ twilight-gateway = "0.14.0"
 twilight-http = "0.14.0"
 twilight-model = "0.14.0"
 reqwest = { version = "0.11.12", features = ["json", "gzip"] }
-reqwest-middleware = "0.1.6"
-reqwest-tracing = "0.3.1"
-reqwest-retry = "0.1.5"
+reqwest-middleware = "0.2.0"
+reqwest-tracing = "0.4.0"
+reqwest-retry = "0.2.1"
 http = "0.2.8"
 rand = { version = "0.8.5", features = ["small_rng"] }
 serde_json = "1.0.91"
 lazy_static = "1.4.0"
+foundation = { git = "https://github.com/Accurate0/foundation.git", features = ["types", "http"] }
 
 [[bin]]
 name = "replybot"

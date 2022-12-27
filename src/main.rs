@@ -1,11 +1,12 @@
-use client::get_http_client_with_headers;
 use config::{Config, Environment, File, FileFormat};
+use foundation::constants::{OPENAI_API_BASE_URL, X_API_KEY_HEADER};
+use foundation::http::get_http_client_with_headers;
+use foundation::types::openai::{OpenAICompletionRequest, OpenAICompletionResponse};
 use futures::lock::Mutex;
 use futures::stream::StreamExt;
 use futures::FutureExt;
 use http::HeaderMap;
 use lazy_static::lazy_static;
-use logging::setup_logging;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use reqwest_middleware::ClientWithMiddleware;
@@ -15,11 +16,8 @@ use twilight_gateway::{Cluster, Event};
 use twilight_http::Client as HttpClient;
 use twilight_model::channel::message::allowed_mentions::AllowedMentionsBuilder;
 use twilight_model::gateway::Intents;
-use types::{OpenAICompletionRequest, OpenAICompletionResponse};
 
-mod client;
-mod logging;
-mod types;
+mod bot_config;
 
 lazy_static! {
     static ref RNG: Arc<Mutex<SmallRng>> = Arc::new(Mutex::new(SmallRng::from_entropy()));
@@ -27,12 +25,12 @@ lazy_static! {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    setup_logging();
+    foundation::log::init_logger();
     let config = Config::builder()
         .add_source(File::new("config.json", FileFormat::Json))
         .add_source(Environment::with_prefix("REPLYBOT"))
         .build()?
-        .try_deserialize::<types::Config>()?;
+        .try_deserialize::<bot_config::Config>()?;
 
     let (cluster, mut events) = Cluster::new(
         config.discord_token.to_owned(),
@@ -48,7 +46,7 @@ async fn main() -> anyhow::Result<()> {
     });
 
     let mut headers = HeaderMap::new();
-    headers.insert("X-Api-Key", config.api_key.parse()?);
+    headers.insert(X_API_KEY_HEADER, config.api_key.parse()?);
     headers.insert("Content-Type", "application/json".parse()?);
 
     let discord_http = Arc::new(HttpClient::new(config.discord_token.to_owned()));
@@ -86,7 +84,7 @@ async fn handle_event(
     event: Event,
     discord: Arc<HttpClient>,
     http: Arc<ClientWithMiddleware>,
-    config: Arc<types::Config>,
+    config: Arc<bot_config::Config>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     match event {
         Event::MessageCreate(msg) if !msg.author.bot => {
@@ -96,7 +94,7 @@ async fn handle_event(
                 discord.create_typing_trigger(msg.channel_id).await?;
 
                 let response = http
-                    .post("https://api.anurag.sh/openai/v1/completions")
+                    .post(format!("{OPENAI_API_BASE_URL}/completions"))
                     .json(&OpenAICompletionRequest {
                         model: "text-davinci-003".to_owned(),
                         prompt: [config.prompt.to_owned(), msg.content.to_owned()].to_vec(),
