@@ -48,10 +48,7 @@ async fn main() -> anyhow::Result<()> {
     });
 
     let mut headers = HeaderMap::new();
-    headers.insert(
-        "Authorization",
-        format!("Bearer {}", config.openai_api_key).parse()?,
-    );
+    headers.insert("X-Api-Key", config.api_key.parse()?);
     headers.insert("Content-Type", "application/json".parse()?);
 
     let discord_http = Arc::new(HttpClient::new(config.discord_token.to_owned()));
@@ -99,7 +96,7 @@ async fn handle_event(
                 discord.create_typing_trigger(msg.channel_id).await?;
 
                 let response = http
-                    .post("https://api.openai.com/v1/completions")
+                    .post("https://api.anurag.sh/openai/v1/completions")
                     .json(&OpenAICompletionRequest {
                         model: "text-davinci-003".to_owned(),
                         prompt: [config.prompt.to_owned(), msg.content.to_owned()].to_vec(),

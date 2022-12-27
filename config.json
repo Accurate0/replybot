@@ -1,6 +1,6 @@
 {
     "discord_token": "[DISCORD_TOKEN]",
     "trigger_chance": 0.15,
-    "openai_api_key": "[OPENAI_KEY]",
+    "api_key": "[API_KEY]",
     "prompt": "This is a message from your arch nemesis, reply to it in an aggressive manner"
 }

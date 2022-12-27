@@ -5,7 +5,7 @@ use serde_json::Value;
 pub struct Config {
     pub discord_token: String,
     pub trigger_chance: f64,
-    pub openai_api_key: String,
+    pub api_key: String,
     pub prompt: String,
 }
 
