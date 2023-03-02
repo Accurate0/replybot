@@ -1,7 +1,13 @@
 FROM rust:1.67.0 as builder
 
 WORKDIR /usr/src/replybot
+
+RUN mkdir src && echo "fn main() {}" >> src/main.rs
+COPY Cargo.* ./
+RUN cargo build --release
+
 COPY . .
+RUN cargo build --release
 RUN cargo install --path .
 
 FROM debian:buster-slim
