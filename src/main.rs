@@ -19,6 +19,8 @@ use twilight_cache_inmemory::{InMemoryCache, ResourceType};
 use twilight_gateway::{Cluster, Event};
 use twilight_http::Client as HttpClient;
 use twilight_model::channel::message::allowed_mentions::AllowedMentionsBuilder;
+use twilight_model::gateway::payload::outgoing::UpdatePresence;
+use twilight_model::gateway::presence::{Activity, ActivityType, MinimalActivity, Status};
 use twilight_model::gateway::Intents;
 use twilight_model::id::Id;
 use zephyrus::prelude::*;
@@ -117,28 +119,44 @@ async fn main() -> anyhow::Result<()> {
     let config = Arc::new(config);
     while let Some((shard_id, event)) = events.next().await {
         cache.update(&event);
-        tokio::spawn(
-            handle_event(
-                shard_id,
-                event,
-                Arc::clone(&discord_http),
-                Arc::clone(&http_client),
-                Arc::clone(&config),
-            )
-            .then(|result| async {
-                match result {
-                    Ok(_) => {}
-                    Err(e) => log::error!("{}", e),
-                }
-            }),
-        );
+        match event {
+            Event::ShardConnected(_) => {
+                log::info!("Connected on shard {shard_id}");
+
+                let activity = Activity::from(MinimalActivity {
+                    kind: ActivityType::Custom,
+                    name: "looking for...".to_owned(),
+                    url: None,
+                });
+                let request =
+                    UpdatePresence::new(Vec::from([activity]), false, None, Status::Online)?;
+                let result = cluster.command(shard_id, &request).await;
+                log::info!("presence update: {:?}", result);
+            }
+
+            _ => {
+                tokio::spawn(
+                    handle_event(
+                        event,
+                        Arc::clone(&discord_http),
+                        Arc::clone(&http_client),
+                        Arc::clone(&config),
+                    )
+                    .then(|result| async {
+                        match result {
+                            Ok(_) => {}
+                            Err(e) => log::error!("{}", e),
+                        }
+                    }),
+                );
+            }
+        }
     }
 
     Ok(())
 }
 
 async fn handle_event(
-    shard_id: u64,
     event: Event,
     discord: Arc<HttpClient>,
     http: Arc<ClientWithMiddleware>,
@@ -151,7 +169,7 @@ async fn handle_event(
             .build(),
     );
 
-    framework.register_global_commands().await.unwrap();
+    framework.register_global_commands().await?;
 
     match event {
         Event::MessageCreate(msg) if !msg.author.bot => {
@@ -177,9 +195,6 @@ async fn handle_event(
                 let inner = i.0;
                 clone.process(inner).await;
             });
-        }
-        Event::ShardConnected(_) => {
-            log::info!("Connected on shard {shard_id}");
         }
         // Other events here...
         _ => {}
