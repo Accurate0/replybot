@@ -23,7 +23,8 @@ http = "0.2.8"
 rand = { version = "0.8.5", features = ["small_rng"] }
 serde_json = "1.0.91"
 lazy_static = "1.4.0"
-foundation = { git = "https://github.com/Accurate0/foundation.git", features = ["types", "http"] }
+foundation = { git = "https://github.com/Accurate0/foundation.git" }
+zephyrus = "0.8.0"
 
 [[bin]]
 name = "replybot"
