@@ -45,6 +45,7 @@ async fn make_openai_reqest(
         .post(format!("{OPENAI_API_BASE_URL}/chat/completions"))
         .json(&OpenAIChatCompletionRequest {
             model: "gpt-3.5-turbo".to_owned(),
+            max_tokens: Some(400),
             messages: [ChatMessage {
                 role: "user".to_owned(),
                 content: prompt.to_owned(),
@@ -53,6 +54,7 @@ async fn make_openai_reqest(
         })
         .send()
         .await?
+        .error_for_status()?
         .json::<OpenAIChatCompletionResponse>()
         .await?;
 
@@ -72,12 +74,25 @@ async fn handle_chatgpt_interaction(
     #[description = "say what"] prompt: String,
 ) -> DefaultCommandResult {
     ctx.acknowledge().await?;
-    let response = make_openai_reqest(ctx.data, &prompt).await?;
+    let response = make_openai_reqest(ctx.data, &prompt).await;
+    match response {
+        Ok(response) => {
+            let response = ctx
+                .interaction_client
+                .update_response(&ctx.interaction.token)
+                .content(Some(&response));
 
-    ctx.interaction_client
-        .update_response(&ctx.interaction.token)
-        .content(Some(&response))?
-        .await?;
+            match response {
+                Ok(response) => {
+                    if let Err(e) = response.await {
+                        log::error!("error sending response: {:#?}", e);
+                    };
+                }
+                Err(e) => log::error!("error in response: {:#?}", e),
+            };
+        }
+        Err(e) => log::error!("error handling interaction: {:#?}", e),
+    };
 
     Ok(())
 }
@@ -102,7 +117,7 @@ async fn main() -> anyhow::Result<()> {
     headers.insert("Content-Type", "application/json".parse()?);
 
     let discord_http = Arc::new(HttpClient::new(config.discord_token.to_owned()));
-    let http_client = Arc::new(get_http_client_with_headers(headers));
+    let http_client = Arc::new(get_http_client_with_headers(headers, 30));
 
     let cache = InMemoryCache::builder()
         .resource_types(ResourceType::MESSAGE)
