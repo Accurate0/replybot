@@ -132,7 +132,7 @@ async fn main() -> anyhow::Result<()> {
 
                 let activity = Activity::from(MinimalActivity {
                     kind: ActivityType::Listening,
-                    name: "The Baddest by K/DA".to_owned(),
+                    name: "THE BADDEST by K/DA".to_owned(),
                     url: None,
                 });
                 let request = UpdatePresence::new([activity], false, None, Status::DoNotDisturb)?;
