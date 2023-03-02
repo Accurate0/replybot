@@ -131,11 +131,11 @@ async fn main() -> anyhow::Result<()> {
                 log::info!("Connected on shard");
 
                 let activity = Activity::from(MinimalActivity {
-                    kind: ActivityType::Custom,
-                    name: "looking for...".to_owned(),
+                    kind: ActivityType::Listening,
+                    name: "The Baddest by K/DA".to_owned(),
                     url: None,
                 });
-                let request = UpdatePresence::new([activity], false, None, Status::Online)?;
+                let request = UpdatePresence::new([activity], false, None, Status::DoNotDisturb)?;
                 let result = shard.command(&request).await;
                 log::info!("presence update: {:?}", result);
             }
