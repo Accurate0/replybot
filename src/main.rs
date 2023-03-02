@@ -6,7 +6,6 @@ use foundation::types::openai::{
     ChatMessage, OpenAIChatCompletionRequest, OpenAIChatCompletionResponse,
 };
 use futures::lock::Mutex;
-use futures::stream::StreamExt;
 use futures::FutureExt;
 use http::HeaderMap;
 use lazy_static::lazy_static;
@@ -16,9 +15,9 @@ use reqwest_middleware::ClientWithMiddleware;
 use serde::Deserialize;
 use std::{error::Error, sync::Arc};
 use twilight_cache_inmemory::{InMemoryCache, ResourceType};
-use twilight_gateway::{Cluster, Event};
+use twilight_gateway::{Event, Shard, ShardId};
 use twilight_http::Client as HttpClient;
-use twilight_model::channel::message::allowed_mentions::AllowedMentionsBuilder;
+use twilight_model::channel::message::AllowedMentions;
 use twilight_model::gateway::payload::outgoing::UpdatePresence;
 use twilight_model::gateway::presence::{Activity, ActivityType, MinimalActivity, Status};
 use twilight_model::gateway::Intents;
@@ -92,18 +91,11 @@ async fn main() -> anyhow::Result<()> {
         .build()?
         .try_deserialize::<BotConfig>()?;
 
-    let (cluster, mut events) = Cluster::new(
-        config.discord_token.to_owned(),
+    let mut shard = Shard::new(
+        ShardId::ONE,
+        config.discord_token.clone(),
         Intents::GUILD_MESSAGES | Intents::MESSAGE_CONTENT,
-    )
-    .await?;
-    let cluster = Arc::new(cluster);
-
-    let cluster_spawn = Arc::clone(&cluster);
-
-    tokio::spawn(async move {
-        cluster_spawn.up().await;
-    });
+    );
 
     let mut headers = HeaderMap::new();
     headers.insert(X_API_KEY_HEADER, config.api_key.parse()?);
@@ -117,11 +109,11 @@ async fn main() -> anyhow::Result<()> {
         .build();
 
     let config = Arc::new(config);
-    while let Some((shard_id, event)) = events.next().await {
+    while let Ok(event) = shard.next_event().await {
         cache.update(&event);
         match event {
-            Event::ShardConnected(_) => {
-                log::info!("Connected on shard {shard_id}");
+            Event::Ready(_) => {
+                log::info!("Connected on shard");
 
                 let activity = Activity::from(MinimalActivity {
                     kind: ActivityType::Custom,
@@ -130,7 +122,7 @@ async fn main() -> anyhow::Result<()> {
                 });
                 let request =
                     UpdatePresence::new(Vec::from([activity]), false, None, Status::Online)?;
-                let result = cluster.command(shard_id, &request).await;
+                let result = shard.command(&request).await;
                 log::info!("presence update: {:?}", result);
             }
 
@@ -184,7 +176,7 @@ async fn handle_event(
                     .create_message(msg.channel_id)
                     .reply(msg.id)
                     .fail_if_not_exists(false)
-                    .allowed_mentions(Some(&AllowedMentionsBuilder::default().build()))
+                    .allowed_mentions(Some(&AllowedMentions::default()))
                     .content(&response)?
                     .await?;
             }

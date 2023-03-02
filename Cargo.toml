@@ -4,27 +4,27 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-anyhow = "1.0.68"
+anyhow = "1.0.69"
 config = "0.13.3"
 fern = "0.6.1"
-futures = "0.3.25"
+futures = "0.3.26"
 log = "0.4.17"
-serde = "1.0.151"
-tokio = { version = "1.23.0", features = ["rt", "macros", "rt-multi-thread"] }
-twilight-cache-inmemory = "0.14.0"
-twilight-gateway = "0.14.0"
-twilight-http = "0.14.0"
-twilight-model = "0.14.0"
-reqwest = { version = "0.11.12", features = ["json", "gzip"] }
+serde = "1.0.152"
+tokio = { version = "1.26.0", features = ["rt", "macros", "rt-multi-thread"] }
+twilight-cache-inmemory = "0.15"
+twilight-gateway = "0.15"
+twilight-http = "0.15"
+twilight-model = "0.15"
+reqwest = { version = "0.11.14", features = ["json", "gzip"] }
 reqwest-middleware = "0.2.0"
 reqwest-tracing = "0.4.0"
 reqwest-retry = "0.2.1"
-http = "0.2.8"
+http = "0.2.9"
 rand = { version = "0.8.5", features = ["small_rng"] }
-serde_json = "1.0.91"
+serde_json = "1.0.93"
 lazy_static = "1.4.0"
 foundation = { git = "https://github.com/Accurate0/foundation.git" }
-zephyrus = "0.8.0"
+zephyrus = { git = "https://github.com/AlvaroMS25/zephyrus.git" }
 
 [[bin]]
 name = "replybot"

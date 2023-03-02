@@ -1199,7 +1199,7 @@ dependencies = [
  "rust-crypto",
  "serde",
  "serde_json",
- "twilight-model 0.15.1",
+ "twilight-model",
  "uuid",
 ]
 
@@ -1641,15 +1641,6 @@ name = "lazy_static"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646"
-
-[[package]]
-name = "leaky-bucket-lite"
-version = "0.5.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1411c737dd21a748044ab29af14b7f920b2dcc277284df6dd986492c98bf5229"
-dependencies = [
- "tokio",
-]
 
 [[package]]
 name = "libc"
@@ -2354,7 +2345,7 @@ dependencies = [
  "twilight-cache-inmemory",
  "twilight-gateway",
  "twilight-http",
- "twilight-model 0.14.5",
+ "twilight-model",
  "zephyrus",
 ]
 
@@ -2801,17 +2792,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "sha-1"
-version = "0.10.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5058ada175748e33390e40e872bd0fe59a19f265d0158daa551c5a88a76009c"
-dependencies = [
- "cfg-if",
- "cpufeatures",
- "digest",
-]
-
-[[package]]
 name = "sha1"
 version = "0.10.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3101,9 +3081,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-tungstenite"
-version = "0.17.2"
+version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f714dd15bead90401d77e04243611caec13726c2408afd5b31901dfcdcb3b181"
+checksum = "54319c93411147bced34cb5609a80e0a8e44c5999c93903a81cd866630ec0bfd"
 dependencies = [
  "futures-util",
  "log",
@@ -3237,9 +3217,9 @@ checksum = "3528ecfd12c466c6f163363caf2d02a71161dd5e1cc6ae7b34207ea2d42d81ed"
 
 [[package]]
 name = "tungstenite"
-version = "0.17.3"
+version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e27992fd6a8c29ee7eef28fc78349aa244134e10ad447ce3b9f0ac0ed0fa4ce0"
+checksum = "30ee6ab729cd4cf0fd55218530c4522ed30b7b6081752839b68fcec8d0960788"
 dependencies = [
  "base64 0.13.1",
  "byteorder",
@@ -3249,7 +3229,7 @@ dependencies = [
  "log",
  "rand 0.8.5",
  "rustls",
- "sha-1",
+ "sha1",
  "thiserror",
  "url",
  "utf-8",
@@ -3258,26 +3238,26 @@ dependencies = [
 
 [[package]]
 name = "twilight-cache-inmemory"
-version = "0.14.4"
+version = "0.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ea0c8548bdfcd234ffbb4fb78d0a7f064e5397894e75d07b09f6c5a815b0ad89"
+checksum = "6c9255a2e6ba208a3054eba760196d6fe216faefa0bd29bc5faeaf475091c345"
 dependencies = [
  "bitflags",
  "dashmap",
  "serde",
- "twilight-model 0.14.5",
+ "twilight-model",
 ]
 
 [[package]]
 name = "twilight-gateway"
-version = "0.14.2"
+version = "0.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "351e391cfeb25658442c0d4abc5707a9e186014d29903c08adaa4a8cad47d55a"
+checksum = "1521b32ec6f04206a0c823087aa1b1473343bba52b3b7b286bae652a09f54959"
 dependencies = [
  "bitflags",
  "flate2",
  "futures-util",
- "leaky-bucket-lite",
+ "rand 0.8.5",
  "rustls",
  "rustls-native-certs",
  "serde",
@@ -3287,15 +3267,14 @@ dependencies = [
  "tracing",
  "twilight-gateway-queue",
  "twilight-http",
- "twilight-model 0.14.5",
- "url",
+ "twilight-model",
 ]
 
 [[package]]
 name = "twilight-gateway-queue"
-version = "0.14.1"
+version = "0.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "140ae587135d22927b001afbac23c4d312cbdd533051cee95fbf8495eda30b4c"
+checksum = "81e08b87014090d4528970d838324d96f8e1ad51f40d86a806ab2bfb124d6bdb"
 dependencies = [
  "tokio",
  "tracing",
@@ -3303,9 +3282,9 @@ dependencies = [
 
 [[package]]
 name = "twilight-http"
-version = "0.14.4"
+version = "0.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5fc3b976b9b759eb27a2ed3a7cc1464ce70085a4482f9d0e73b7aa5c2bf07479"
+checksum = "f317f2005ae917ffa49c7979e62f7df348c6a564908bb1a38ecf202e97542257"
 dependencies = [
  "brotli",
  "hyper",
@@ -3317,33 +3296,19 @@ dependencies = [
  "tokio",
  "tracing",
  "twilight-http-ratelimiting",
- "twilight-model 0.14.5",
+ "twilight-model",
  "twilight-validate",
 ]
 
 [[package]]
 name = "twilight-http-ratelimiting"
-version = "0.14.2"
+version = "0.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "11aa98cc9392b252b32345d89dfac410b013059fe295a6fd2bbac72e0d6b9f38"
+checksum = "f93eb986554fc3fbac775d028c74d074a3b11790b3de44626a45d7aedfe0c3d8"
 dependencies = [
  "futures-util",
  "http",
  "tokio",
- "tracing",
-]
-
-[[package]]
-name = "twilight-model"
-version = "0.14.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e19f4534f7655b8a308ac30e6e4b7a9ae521681c4702e1ee1d2c1d165124ca2"
-dependencies = [
- "bitflags",
- "serde",
- "serde-value",
- "serde_repr",
- "time 0.3.20",
  "tracing",
 ]
 
@@ -3363,11 +3328,11 @@ dependencies = [
 
 [[package]]
 name = "twilight-validate"
-version = "0.14.2"
+version = "0.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2e7889d81cb059ca6fdfba45876d7ea3707ea604e23533a0592f7909faffcd2"
+checksum = "973fd6fa055343f0345600d8ae2a194b7896edf7d23b3240ed4fc13d38ea8f24"
 dependencies = [
- "twilight-model 0.14.5",
+ "twilight-model",
 ]
 
 [[package]]
@@ -3776,24 +3741,22 @@ checksum = "09041cd90cf85f7f8b2df60c646f853b7f535ce68f85244eb6731cf89fa498ec"
 
 [[package]]
 name = "zephyrus"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "930e697da2cfa4315889ae6e4375b95e3e258da05588bdc1cc82f0fde6ff231c"
+version = "0.9.0"
+source = "git+https://github.com/AlvaroMS25/zephyrus.git#d73ae7bc006b49e2926b172f1b5af3a4ad8628de"
 dependencies = [
  "async-trait",
  "parking_lot",
  "tokio",
  "tracing",
  "twilight-http",
- "twilight-model 0.14.5",
+ "twilight-model",
  "zephyrus-macros",
 ]
 
 [[package]]
 name = "zephyrus-macros"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "532b8810161b85cba63c070d7ae6d8e54794c5b959ca8e33fca8b5c70ed0216a"
+version = "0.9.0"
+source = "git+https://github.com/AlvaroMS25/zephyrus.git#d73ae7bc006b49e2926b172f1b5af3a4ad8628de"
 dependencies = [
  "proc-macro2",
  "quote",
