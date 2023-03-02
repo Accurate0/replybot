@@ -29,7 +29,6 @@ pub struct BotConfig {
     pub discord_token: String,
     pub trigger_chance: f64,
     pub api_key: String,
-    pub prompt: String,
     pub app_id: String,
 }
 
