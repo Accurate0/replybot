@@ -120,8 +120,7 @@ async fn main() -> anyhow::Result<()> {
                     name: "looking for...".to_owned(),
                     url: None,
                 });
-                let request =
-                    UpdatePresence::new(Vec::from([activity]), false, None, Status::Online)?;
+                let request = UpdatePresence::new([activity], false, None, Status::Online)?;
                 let result = shard.command(&request).await;
                 log::info!("presence update: {:?}", result);
             }
