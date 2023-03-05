@@ -211,7 +211,7 @@ async fn handle_message_button_press(
 async fn main() -> anyhow::Result<()> {
     foundation::log::init_logger(log::LevelFilter::Info);
 
-    let client = redis::Client::open("redis://127.0.0.1/")?;
+    let client = redis::Client::open("redis://replybot-cache/")?;
     let redis = client.get_async_connection().await?;
     log::info!("connected to redis");
 
