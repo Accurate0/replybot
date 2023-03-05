@@ -249,6 +249,21 @@ async fn main() -> anyhow::Result<()> {
 
     while let Ok(event) = shard.next_event().await {
         cache.update(&event);
+        match event.guild_id() {
+            Some(guild_id) => {
+                let guild = cache.guild(guild_id);
+                match guild {
+                    Some(guild) => {
+                        log::info!("event {:?} from server {:?}", event.kind(), guild.name());
+                    }
+                    None => {}
+                }
+            }
+            None => {
+                log::info!("event {:?}", event.kind());
+            }
+        }
+
         match event {
             Event::Ready(_) => {
                 log::info!("Connected on shard");
