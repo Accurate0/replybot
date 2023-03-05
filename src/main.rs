@@ -231,7 +231,7 @@ async fn main() -> anyhow::Result<()> {
     let mut shard = Shard::new(
         ShardId::ONE,
         discord_token.clone(),
-        Intents::GUILD_MESSAGES | Intents::MESSAGE_CONTENT,
+        Intents::GUILD_MESSAGES | Intents::MESSAGE_CONTENT | Intents::GUILDS,
     );
 
     let discord_http = Arc::new(DiscordHttpClient::new(discord_token.to_owned()));
