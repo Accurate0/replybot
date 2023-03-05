@@ -51,7 +51,6 @@ pub struct BotContext {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct InteractionValue {
     openai_response: String,
-    // token: String,
 }
 
 lazy_static! {
@@ -211,11 +210,7 @@ async fn handle_message_button_press(
 async fn main() -> anyhow::Result<()> {
     foundation::log::init_logger(log::LevelFilter::Info);
 
-    #[cfg(debug_assertions)]
     let url = "redis://127.0.0.1/";
-    #[cfg(not(debug_assertions))]
-    let url = "redis://replybot-cache/";
-
     let client = redis::Client::open(url)?;
     let redis = client.get_async_connection().await?;
     log::info!("connected to redis");
