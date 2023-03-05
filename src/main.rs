@@ -1,6 +1,7 @@
 use anyhow::Context;
 use config::{Config, Environment, File, FileFormat};
 use foundation::constants::{OPENAI_API_BASE_URL, X_API_KEY_HEADER};
+use foundation::hash;
 use foundation::http::get_http_client_with_headers;
 use foundation::types::openai::{
     ChatMessage, OpenAIChatCompletionRequest, OpenAIChatCompletionResponse,
@@ -11,19 +12,27 @@ use http::HeaderMap;
 use lazy_static::lazy_static;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
+use redis::AsyncCommands;
 use reqwest_middleware::ClientWithMiddleware;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{error::Error, sync::Arc};
 use twilight_cache_inmemory::{InMemoryCache, ResourceType};
 use twilight_gateway::{Event, Shard, ShardId};
-use twilight_http::Client as HttpClient;
-use twilight_model::channel::message::AllowedMentions;
+use twilight_http::Client as DiscordHttpClient;
+use twilight_model::channel::message::component::{Button, ButtonStyle};
+use twilight_model::channel::message::{AllowedMentions, MessageFlags};
 use twilight_model::gateway::payload::outgoing::UpdatePresence;
-use twilight_model::gateway::presence::{Activity, ActivityType, MinimalActivity, Status};
+use twilight_model::gateway::presence::{ActivityType, MinimalActivity, Status};
 use twilight_model::gateway::Intents;
 use twilight_model::id::Id;
+use twilight_util::builder::InteractionResponseDataBuilder;
+use zephyrus::framework::DefaultError;
 use zephyrus::prelude::*;
-use zephyrus::twilight_exports::ApplicationMarker;
+use zephyrus::twilight_exports::{
+    ActionRow, ApplicationMarker, Interaction, InteractionResponse, InteractionResponseType,
+};
+
+pub const MAX_MESSAGE_LEN: usize = 800;
 
 #[derive(Deserialize, Debug)]
 pub struct BotConfig {
@@ -33,19 +42,31 @@ pub struct BotConfig {
     pub app_id: String,
 }
 
+pub type GuardedBotContext = Mutex<BotContext>;
+pub struct BotContext {
+    pub http_client: ClientWithMiddleware,
+    pub redis: redis::aio::Connection,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct InteractionValue {
+    openai_response: String,
+    // token: String,
+}
+
 lazy_static! {
     static ref RNG: Arc<Mutex<SmallRng>> = Arc::new(Mutex::new(SmallRng::from_entropy()));
 }
 
 async fn make_openai_reqest(
-    http: &Arc<ClientWithMiddleware>,
+    http: &ClientWithMiddleware,
     prompt: &str,
 ) -> Result<String, anyhow::Error> {
     let response = http
         .post(format!("{OPENAI_API_BASE_URL}/chat/completions"))
         .json(&OpenAIChatCompletionRequest {
             model: "gpt-3.5-turbo".to_owned(),
-            max_tokens: Some(400),
+            max_tokens: None,
             messages: [ChatMessage {
                 role: "user".to_owned(),
                 content: prompt.to_owned(),
@@ -67,31 +88,120 @@ async fn make_openai_reqest(
         .clone())
 }
 
+#[error_handler]
+async fn handle_interaction_error(
+    _ctx: &SlashContext<Arc<GuardedBotContext>>,
+    error: DefaultError,
+) {
+    log::error!("error handling interaction: {:#?}", error);
+}
+
 #[command("chatgpt")]
 #[description = "fucking ai"]
+#[error_handler(handle_interaction_error)]
 async fn handle_chatgpt_interaction(
-    ctx: &SlashContext<Arc<ClientWithMiddleware>>,
+    ctx: &SlashContext<Arc<GuardedBotContext>>,
     #[description = "say what"] prompt: String,
 ) -> DefaultCommandResult {
-    ctx.acknowledge().await?;
-    let response = make_openai_reqest(ctx.data, &prompt).await;
-    match response {
-        Ok(response) => {
-            let response = ctx
-                .interaction_client
-                .update_response(&ctx.interaction.token)
-                .content(Some(&response));
+    let mut bot_ctx = ctx.data.lock().await;
 
-            match response {
-                Ok(response) => {
-                    if let Err(e) = response.await {
-                        log::error!("error sending response: {:#?}", e);
-                    };
+    ctx.acknowledge().await?;
+    let response = make_openai_reqest(&bot_ctx.http_client, &prompt).await?;
+    let hash = hash::get_sha1(&response);
+
+    if response.len() > MAX_MESSAGE_LEN {
+        let redis = &mut bot_ctx.redis;
+        redis
+            .set(
+                &hash,
+                serde_json::to_string(&InteractionValue {
+                    openai_response: response.clone(),
+                })
+                .context("could not serialize")?,
+            )
+            .await?;
+
+        let chunk = format!("{}...", &response[..MAX_MESSAGE_LEN]);
+        let button = Button {
+            custom_id: Some(hash),
+            disabled: false,
+            emoji: None,
+            label: Some("Click to see all".to_owned()),
+            style: ButtonStyle::Primary,
+            url: None,
+        };
+
+        let action_row = ActionRow {
+            components: [button.into()].into(),
+        };
+
+        ctx.interaction_client
+            .update_response(&ctx.interaction.token)
+            .content(Some(&chunk))?
+            .components(Some(&[action_row.into()]))?
+            .await?;
+    } else {
+        ctx.interaction_client
+            .update_response(&ctx.interaction.token)
+            .content(Some(&response))?
+            .await?;
+    }
+
+    Ok(())
+}
+
+async fn handle_message_button_press(
+    interaction: Interaction,
+    ctx: Arc<GuardedBotContext>,
+    discord: Arc<DiscordHttpClient>,
+) -> Result<(), anyhow::Error> {
+    let redis = &mut ctx.lock().await.redis;
+    let interaction_data = interaction.data.context("no interaction data")?;
+    match interaction_data {
+        zephyrus::twilight_exports::InteractionData::MessageComponent(m) => {
+            let interaction_value = serde_json::from_str::<InteractionValue>(
+                &redis.get::<String, String>(m.custom_id).await?,
+            )?;
+
+            let interaction_client = discord.interaction(interaction.application_id);
+
+            let chunks = interaction_value
+                .openai_response
+                .chars()
+                .collect::<Vec<char>>()
+                .chunks(2000)
+                .map(|c| c.iter().collect::<String>())
+                .collect::<Vec<String>>();
+
+            let mut chunks_iter = chunks.iter();
+
+            if let Some(first_chunk) = chunks_iter.next() {
+                let response_data = InteractionResponseDataBuilder::default()
+                    .content(first_chunk)
+                    .flags(MessageFlags::EPHEMERAL)
+                    .build();
+
+                interaction_client
+                    .create_response(
+                        interaction.id,
+                        &interaction.token,
+                        &InteractionResponse {
+                            kind: InteractionResponseType::ChannelMessageWithSource,
+                            data: Some(response_data),
+                        },
+                    )
+                    .await?;
+
+                for chunk in chunks_iter {
+                    interaction_client
+                        .create_followup(&interaction.token)
+                        .content(chunk)?
+                        .flags(MessageFlags::EPHEMERAL)
+                        .await?;
                 }
-                Err(e) => log::error!("error in response: {:#?}", e),
-            };
+            }
         }
-        Err(e) => log::error!("error handling interaction: {:#?}", e),
+        _ => log::error!("this should not happen"),
     };
 
     Ok(())
@@ -100,6 +210,11 @@ async fn handle_chatgpt_interaction(
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     foundation::log::init_logger(log::LevelFilter::Info);
+
+    let client = redis::Client::open("redis://127.0.0.1/")?;
+    let redis = client.get_async_connection().await?;
+    log::info!("connected to redis");
+
     let config = Config::builder()
         .add_source(File::new("config.json", FileFormat::Json))
         .add_source(Environment::with_prefix("REPLYBOT"))
@@ -116,8 +231,9 @@ async fn main() -> anyhow::Result<()> {
     headers.insert(X_API_KEY_HEADER, config.api_key.parse()?);
     headers.insert("Content-Type", "application/json".parse()?);
 
-    let discord_http = Arc::new(HttpClient::new(config.discord_token.to_owned()));
-    let http_client = Arc::new(get_http_client_with_headers(headers, 30));
+    let discord_http = Arc::new(DiscordHttpClient::new(config.discord_token.to_owned()));
+    let http_client = get_http_client_with_headers(headers, 30);
+    let bot_context = Arc::new(Mutex::new(BotContext { http_client, redis }) as GuardedBotContext);
 
     let cache = InMemoryCache::builder()
         .resource_types(ResourceType::MESSAGE)
@@ -130,11 +246,13 @@ async fn main() -> anyhow::Result<()> {
             Event::Ready(_) => {
                 log::info!("Connected on shard");
 
-                let activity = Activity::from(MinimalActivity {
+                let activity = MinimalActivity {
                     kind: ActivityType::Listening,
                     name: "THE BADDEST by K/DA".to_owned(),
                     url: None,
-                });
+                }
+                .into();
+
                 let request = UpdatePresence::new([activity], false, None, Status::DoNotDisturb)?;
                 let result = shard.command(&request).await;
                 log::info!("presence update: {:?}", result);
@@ -145,7 +263,7 @@ async fn main() -> anyhow::Result<()> {
                     handle_event(
                         event,
                         Arc::clone(&discord_http),
-                        Arc::clone(&http_client),
+                        Arc::clone(&bot_context),
                         Arc::clone(&config),
                     )
                     .then(|result| async {
@@ -164,13 +282,13 @@ async fn main() -> anyhow::Result<()> {
 
 async fn handle_event(
     event: Event,
-    discord: Arc<HttpClient>,
-    http: Arc<ClientWithMiddleware>,
+    discord: Arc<DiscordHttpClient>,
+    ctx: Arc<GuardedBotContext>,
     config: Arc<BotConfig>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let app_id = Id::<ApplicationMarker>::new(config.app_id.parse()?);
     let framework = Arc::new(
-        Framework::builder(discord.clone(), app_id, http.clone())
+        Framework::builder(discord.clone(), app_id, ctx.clone())
             .command(handle_chatgpt_interaction)
             .build(),
     );
@@ -184,7 +302,8 @@ async fn handle_event(
                 log::info!("triggered reply for: {}", msg.author.id);
                 discord.create_typing_trigger(msg.channel_id).await?;
 
-                let response = make_openai_reqest(&http, &msg.content).await?;
+                let ctx = ctx.lock().await;
+                let response = make_openai_reqest(&ctx.http_client, &msg.content).await?;
 
                 discord
                     .create_message(msg.channel_id)
@@ -195,13 +314,26 @@ async fn handle_event(
                     .await?;
             }
         }
-        Event::InteractionCreate(i) => {
-            let clone = Arc::clone(&framework);
-            tokio::spawn(async move {
-                let inner = i.0;
-                clone.process(inner).await;
-            });
-        }
+        Event::InteractionCreate(i) => match i.kind {
+            zephyrus::twilight_exports::InteractionType::ApplicationCommand => {
+                let clone = Arc::clone(&framework);
+                tokio::spawn(async move {
+                    let inner = i.0;
+                    clone.process(inner).await;
+                });
+            }
+            zephyrus::twilight_exports::InteractionType::MessageComponent => {
+                tokio::spawn(
+                    handle_message_button_press(i.0, ctx, discord).then(|result| async {
+                        match result {
+                            Ok(_) => {}
+                            Err(e) => log::error!("{}", e),
+                        }
+                    }),
+                );
+            }
+            kind => log::info!("ignoring interaction type: {:?}", kind),
+        },
         // Other events here...
         _ => {}
     }

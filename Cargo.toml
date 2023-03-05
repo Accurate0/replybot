@@ -15,6 +15,7 @@ twilight-cache-inmemory = "0.15"
 twilight-gateway = "0.15"
 twilight-http = "0.15"
 twilight-model = "0.15"
+twilight-util = { version = "0.15.0", features = ["builder"] }
 reqwest = { version = "0.11.14", features = ["json", "gzip"] }
 reqwest-middleware = "0.2.0"
 reqwest-tracing = "0.4.0"
@@ -25,6 +26,7 @@ serde_json = "1.0.93"
 lazy_static = "1.4.0"
 foundation = { git = "https://github.com/Accurate0/foundation.git" }
 zephyrus = { git = "https://github.com/AlvaroMS25/zephyrus.git" }
+redis = { version = "0.22.3", features = ["aio", "tokio-comp"] }
 
 [[bin]]
 name = "replybot"
