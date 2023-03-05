@@ -96,7 +96,7 @@ async fn handle_interaction_error(
     _ctx: &SlashContext<Arc<GuardedBotContext>>,
     error: DefaultError,
 ) {
-    log::error!("error handling interaction: {:#?}", error);
+    log::error!("error handling interaction: {:?}", error);
 }
 
 #[command("chatgpt")]
