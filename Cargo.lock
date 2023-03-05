@@ -374,6 +374,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "aws-sdk-secretsmanager"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b9b6d43c6918840b954147458ab8a316a8edd032b713c04a7220b34b7330f45e"
+dependencies = [
+ "aws-credential-types",
+ "aws-endpoint",
+ "aws-http",
+ "aws-sig-auth",
+ "aws-smithy-async",
+ "aws-smithy-client",
+ "aws-smithy-http",
+ "aws-smithy-http-tower",
+ "aws-smithy-json",
+ "aws-smithy-types",
+ "aws-types",
+ "bytes",
+ "fastrand",
+ "http",
+ "regex",
+ "tokio-stream",
+ "tower",
+]
+
+[[package]]
 name = "aws-sdk-sqs"
 version = "0.24.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1188,15 +1213,17 @@ dependencies = [
 
 [[package]]
 name = "foundation"
-version = "0.17.0"
-source = "git+https://github.com/Accurate0/foundation.git#e6c40d6ce9b3ad41a07fa300b44c378e38556a3d"
+version = "0.18.0"
+source = "git+https://github.com/Accurate0/foundation.git#b35ebf4de6ac088f5e5f78d1ddfe3298a0f72424"
 dependencies = [
  "aliri",
  "aliri_clock",
  "aliri_oauth2",
  "anyhow",
+ "async-trait",
  "aws-config",
  "aws-sdk-s3",
+ "aws-sdk-secretsmanager",
  "aws-sdk-sqs",
  "config",
  "fern",
@@ -2361,6 +2388,7 @@ name = "replybot"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "aws-sdk-secretsmanager",
  "config",
  "fern",
  "foundation",

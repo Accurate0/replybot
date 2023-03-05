@@ -1,6 +1,3 @@
 {
-    "discord_token": "[DISCORD_TOKEN]",
-    "trigger_chance": 0.00,
-    "api_key": "[API_KEY]",
-    "app_id": "[APP_ID]"
+    "triggerChance": 0.00
 }

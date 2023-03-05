@@ -1,18 +1,18 @@
 use anyhow::Context;
 use config::{Config, Environment, File, FileFormat};
 use foundation::constants::{OPENAI_API_BASE_URL, X_API_KEY_HEADER};
-use foundation::hash;
-use foundation::http::get_http_client_with_headers;
+use foundation::extensions::SecretsManagerExtensions;
 use foundation::types::openai::{
     ChatMessage, OpenAIChatCompletionRequest, OpenAIChatCompletionResponse,
 };
+use foundation::{aws, hash};
 use futures::lock::Mutex;
 use futures::FutureExt;
-use http::HeaderMap;
 use lazy_static::lazy_static;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use redis::AsyncCommands;
+use reqwest::ClientBuilder;
 use reqwest_middleware::ClientWithMiddleware;
 use serde::{Deserialize, Serialize};
 use std::{error::Error, sync::Arc};
@@ -24,28 +24,33 @@ use twilight_model::channel::message::{AllowedMentions, MessageFlags};
 use twilight_model::gateway::payload::outgoing::UpdatePresence;
 use twilight_model::gateway::presence::{ActivityType, MinimalActivity, Status};
 use twilight_model::gateway::Intents;
-use twilight_model::id::Id;
 use twilight_util::builder::InteractionResponseDataBuilder;
 use zephyrus::framework::DefaultError;
 use zephyrus::prelude::*;
 use zephyrus::twilight_exports::{
-    ActionRow, ApplicationMarker, Interaction, InteractionResponse, InteractionResponseType,
+    ActionRow, Interaction, InteractionResponse, InteractionResponseType,
 };
 
-pub const MAX_MESSAGE_LEN: usize = 800;
+pub const CONFIG_APIM_API_KEY_ID: &str = "Replybot-ApimApiKey";
+#[cfg(debug_assertions)]
+pub const CONFIG_DISCORD_TOKEN_ID: &str = "Replybot-DiscordAuthToken-dev";
+#[cfg(not(debug_assertions))]
+pub const CONFIG_DISCORD_TOKEN_ID: &str = "Replybot-DiscordAuthToken";
+
+pub const MAX_MESSAGE_LEN: usize = 1000;
+pub const MAX_DISCORD_MESSAGE_LEN: usize = 2000;
 
 #[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct BotConfig {
-    pub discord_token: String,
     pub trigger_chance: f64,
-    pub api_key: String,
-    pub app_id: String,
 }
 
 pub type GuardedBotContext = Mutex<BotContext>;
 pub struct BotContext {
     pub http_client: ClientWithMiddleware,
     pub redis: redis::aio::Connection,
+    pub secrets: aws_sdk_secretsmanager::Client,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -59,10 +64,15 @@ lazy_static! {
 
 async fn make_openai_reqest(
     http: &ClientWithMiddleware,
+    secrets: &aws_sdk_secretsmanager::Client,
     prompt: &str,
 ) -> Result<String, anyhow::Error> {
+    let api_key = secrets.get_secret(CONFIG_APIM_API_KEY_ID).await?;
+
     let response = http
         .post(format!("{OPENAI_API_BASE_URL}/chat/completions"))
+        .header(X_API_KEY_HEADER, api_key)
+        .header("Content-Type", "application/json")
         .json(&OpenAIChatCompletionRequest {
             model: "gpt-3.5-turbo".to_owned(),
             max_tokens: None,
@@ -105,7 +115,7 @@ async fn handle_chatgpt_interaction(
     let mut bot_ctx = ctx.data.lock().await;
 
     ctx.acknowledge().await?;
-    let response = make_openai_reqest(&bot_ctx.http_client, &prompt).await?;
+    let response = make_openai_reqest(&bot_ctx.http_client, &bot_ctx.secrets, &prompt).await?;
     let hash = hash::get_sha1(&response);
 
     if response.len() > MAX_MESSAGE_LEN {
@@ -168,7 +178,7 @@ async fn handle_message_button_press(
                 .openai_response
                 .chars()
                 .collect::<Vec<char>>()
-                .chunks(2000)
+                .chunks(MAX_DISCORD_MESSAGE_LEN)
                 .map(|c| c.iter().collect::<String>())
                 .collect::<Vec<String>>();
 
@@ -210,10 +220,19 @@ async fn handle_message_button_press(
 async fn main() -> anyhow::Result<()> {
     foundation::log::init_logger(log::LevelFilter::Info);
 
+    let shared_config = aws::config::get_shared_config().await;
+    let secrets = aws_sdk_secretsmanager::Client::new(&shared_config);
+
     let url = "redis://127.0.0.1/";
     let client = redis::Client::open(url)?;
     let redis = client.get_async_connection().await?;
     log::info!("connected to redis");
+
+    let discord_token = secrets.get_secret(CONFIG_DISCORD_TOKEN_ID).await?;
+    log::info!(
+        "loaded discord token from secret: {}",
+        CONFIG_DISCORD_TOKEN_ID
+    );
 
     let config = Config::builder()
         .add_source(File::new("config.json", FileFormat::Json))
@@ -223,17 +242,18 @@ async fn main() -> anyhow::Result<()> {
 
     let mut shard = Shard::new(
         ShardId::ONE,
-        config.discord_token.clone(),
+        discord_token.clone(),
         Intents::GUILD_MESSAGES | Intents::MESSAGE_CONTENT,
     );
 
-    let mut headers = HeaderMap::new();
-    headers.insert(X_API_KEY_HEADER, config.api_key.parse()?);
-    headers.insert("Content-Type", "application/json".parse()?);
-
-    let discord_http = Arc::new(DiscordHttpClient::new(config.discord_token.to_owned()));
-    let http_client = get_http_client_with_headers(headers, 30);
-    let bot_context = Arc::new(Mutex::new(BotContext { http_client, redis }) as GuardedBotContext);
+    let discord_http = Arc::new(DiscordHttpClient::new(discord_token.to_owned()));
+    let http_client =
+        foundation::http::get_default_middleware(ClientBuilder::new().build()?).build();
+    let bot_context = Arc::new(Mutex::new(BotContext {
+        http_client,
+        redis,
+        secrets,
+    }) as GuardedBotContext);
 
     let cache = InMemoryCache::builder()
         .resource_types(ResourceType::MESSAGE)
@@ -286,7 +306,7 @@ async fn handle_event(
     ctx: Arc<GuardedBotContext>,
     config: Arc<BotConfig>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let app_id = Id::<ApplicationMarker>::new(config.app_id.parse()?);
+    let app_id = discord.current_user_application().await?.model().await?.id;
     let framework = Arc::new(
         Framework::builder(discord.clone(), app_id, ctx.clone())
             .command(handle_chatgpt_interaction)
@@ -303,7 +323,8 @@ async fn handle_event(
                 discord.create_typing_trigger(msg.channel_id).await?;
 
                 let ctx = ctx.lock().await;
-                let response = make_openai_reqest(&ctx.http_client, &msg.content).await?;
+                let response =
+                    make_openai_reqest(&ctx.http_client, &ctx.secrets, &msg.content).await?;
 
                 discord
                     .create_message(msg.channel_id)

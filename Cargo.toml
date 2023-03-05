@@ -27,6 +27,7 @@ lazy_static = "1.4.0"
 foundation = { git = "https://github.com/Accurate0/foundation.git" }
 zephyrus = { git = "https://github.com/AlvaroMS25/zephyrus.git" }
 redis = { version = "0.22.3", features = ["aio", "tokio-comp"] }
+aws-sdk-secretsmanager = "0.24.0"
 
 [[bin]]
 name = "replybot"
