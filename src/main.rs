@@ -1,5 +1,4 @@
 use anyhow::Context;
-use config::{Config, Environment, File, FileFormat};
 use foundation::constants::{OPENAI_API_BASE_URL, X_API_KEY_HEADER};
 use foundation::extensions::SecretsManagerExtensions;
 use foundation::types::openai::{
@@ -36,8 +35,9 @@ pub const CONFIG_APIM_API_KEY_ID: &str = "Replybot-ApimApiKey";
 pub const CONFIG_DISCORD_TOKEN_ID: &str = "Replybot-DiscordAuthToken-dev";
 #[cfg(not(debug_assertions))]
 pub const CONFIG_DISCORD_TOKEN_ID: &str = "Replybot-DiscordAuthToken";
+pub const CONFIG_TRIGGER_CHANCE: f64 = 0.00;
 
-pub const MAX_MESSAGE_LEN: usize = 1000;
+pub const BUTTON_THRESHOLD: usize = 1000;
 pub const MAX_DISCORD_MESSAGE_LEN: usize = 2000;
 
 #[derive(Deserialize, Debug)]
@@ -118,7 +118,7 @@ async fn handle_chatgpt_interaction(
     let response = make_openai_reqest(&bot_ctx.http_client, &bot_ctx.secrets, &prompt).await?;
     let hash = hash::get_sha1(&response);
 
-    if response.len() > MAX_MESSAGE_LEN {
+    if response.len() > BUTTON_THRESHOLD {
         let redis = &mut bot_ctx.redis;
         redis
             .set(
@@ -130,7 +130,7 @@ async fn handle_chatgpt_interaction(
             )
             .await?;
 
-        let chunk = format!("{}...", &response[..MAX_MESSAGE_LEN]);
+        let chunk = format!("{}...", &response[..BUTTON_THRESHOLD]);
         let button = Button {
             custom_id: Some(hash),
             disabled: false,
@@ -234,12 +234,6 @@ async fn main() -> anyhow::Result<()> {
         CONFIG_DISCORD_TOKEN_ID
     );
 
-    let config = Config::builder()
-        .add_source(File::new("config.json", FileFormat::Json))
-        .add_source(Environment::with_prefix("REPLYBOT"))
-        .build()?
-        .try_deserialize::<BotConfig>()?;
-
     let mut shard = Shard::new(
         ShardId::ONE,
         discord_token.clone(),
@@ -259,7 +253,6 @@ async fn main() -> anyhow::Result<()> {
         .resource_types(ResourceType::MESSAGE)
         .build();
 
-    let config = Arc::new(config);
     while let Ok(event) = shard.next_event().await {
         cache.update(&event);
         match event {
@@ -280,18 +273,14 @@ async fn main() -> anyhow::Result<()> {
 
             _ => {
                 tokio::spawn(
-                    handle_event(
-                        event,
-                        Arc::clone(&discord_http),
-                        Arc::clone(&bot_context),
-                        Arc::clone(&config),
-                    )
-                    .then(|result| async {
-                        match result {
-                            Ok(_) => {}
-                            Err(e) => log::error!("{}", e),
-                        }
-                    }),
+                    handle_event(event, Arc::clone(&discord_http), Arc::clone(&bot_context)).then(
+                        |result| async {
+                            match result {
+                                Ok(_) => {}
+                                Err(e) => log::error!("{}", e),
+                            }
+                        },
+                    ),
                 );
             }
         }
@@ -304,7 +293,6 @@ async fn handle_event(
     event: Event,
     discord: Arc<DiscordHttpClient>,
     ctx: Arc<GuardedBotContext>,
-    config: Arc<BotConfig>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let app_id = discord.current_user_application().await?.model().await?.id;
     let framework = Arc::new(
@@ -318,7 +306,7 @@ async fn handle_event(
     match event {
         Event::MessageCreate(msg) if !msg.author.bot => {
             let mut rng = RNG.lock().await;
-            if rng.gen_bool(config.trigger_chance) {
+            if rng.gen_bool(CONFIG_TRIGGER_CHANCE) {
                 log::info!("triggered reply for: {}", msg.author.id);
                 discord.create_typing_trigger(msg.channel_id).await?;
 
