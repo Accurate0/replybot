@@ -7,7 +7,7 @@ WORKDIR /app
 
 FROM chef AS planner
 
-COPY . .
+COPY Cargo.* ./
 RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS builder
