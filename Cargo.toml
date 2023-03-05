@@ -14,6 +14,7 @@ tokio = { version = "1.26.0", features = ["rt", "macros", "rt-multi-thread"] }
 twilight-cache-inmemory = "0.15"
 twilight-gateway = "0.15"
 twilight-http = "0.15"
+openssl = { version = "0.10", features = ["vendored"] }
 twilight-model = "0.15"
 twilight-util = { version = "0.15.0", features = ["builder"] }
 reqwest = { version = "0.11.14", features = ["json", "gzip"] }
