@@ -40,12 +40,6 @@ pub const CONFIG_TRIGGER_CHANCE: f64 = 0.00;
 pub const BUTTON_THRESHOLD: usize = 1000;
 pub const MAX_DISCORD_MESSAGE_LEN: usize = 2000;
 
-#[derive(Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct BotConfig {
-    pub trigger_chance: f64,
-}
-
 pub type GuardedBotContext = Mutex<BotContext>;
 pub struct BotContext {
     pub http_client: ClientWithMiddleware,
