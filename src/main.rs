@@ -251,13 +251,8 @@ async fn main() -> anyhow::Result<()> {
         cache.update(&event);
         match event.guild_id() {
             Some(guild_id) => {
-                let guild = cache.guild(guild_id);
-                match guild {
-                    Some(guild) => {
-                        log::info!("event {:?} from server {:?}", event.kind(), guild.name());
-                    }
-                    None => {}
-                }
+                let guild = discord_http.guild(guild_id).await?.model().await?;
+                log::info!("event {:?} from server {:?}", event.kind(), guild.name);
             }
             None => {
                 log::info!("event {:?}", event.kind());
