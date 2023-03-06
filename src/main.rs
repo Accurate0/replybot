@@ -75,13 +75,14 @@ lazy_static! {
     map_error = r##"|e| anyhow::anyhow!("{:?}", e)"##,
     type = "AsyncRedisCache<String, String>",
     create = r##" {
-        AsyncRedisCache::new("REPLYBOT_", 3600)
+        AsyncRedisCache::new("APIM_API_KEY", 3600)
+            .set_namespace("REPLYBOT_")
             .set_connection_string(CONFIG_REDIS_CONNECTION)
             .build()
             .await
             .expect("error building redis cache")
     } "##,
-    convert = r#"{ "APIM_API_KEY".to_string() }"#
+    convert = r#"{ "".to_string() }"#
 )]
 async fn get_api_key(secrets: &aws_sdk_secretsmanager::Client) -> Result<String, anyhow::Error> {
     secrets.get_secret(CONFIG_APIM_API_KEY_ID).await
