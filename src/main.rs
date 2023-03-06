@@ -198,10 +198,10 @@ async fn handle_message_button_press(
         let mut guard = ctx.lock().await;
         let redis = &mut guard.redis;
 
-        match redis.get::<String, String>(m.custom_id.clone()).await {
+        match redis.get::<_, String>(&m.custom_id).await {
             Ok(interaction_value) => serde_json::from_str(&interaction_value)?,
             Err(_) => {
-                log::info!("cache miss for interaction: {}", m.custom_id);
+                log::info!("cache miss for interaction: {}", &m.custom_id);
                 let tables = &guard.tables;
                 let response = tables
                     .get_item()
