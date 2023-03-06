@@ -133,9 +133,10 @@ async fn handle_chatgpt_interaction(
     ctx: &SlashContext<Arc<GuardedBotContext>>,
     #[description = "say what"] prompt: String,
 ) -> DefaultCommandResult {
+    ctx.acknowledge().await?;
+
     let mut bot_ctx = ctx.data.lock().await;
 
-    ctx.acknowledge().await?;
     let original_response =
         make_openai_reqest(&bot_ctx.http_client, &bot_ctx.secrets, &prompt).await?;
     let response = original_response
