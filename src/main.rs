@@ -30,6 +30,7 @@ use zephyrus::framework::DefaultError;
 use zephyrus::prelude::*;
 use zephyrus::twilight_exports::{
     ActionRow, Interaction, InteractionData, InteractionResponse, InteractionResponseType,
+    InteractionType,
 };
 
 mod db {
@@ -390,14 +391,14 @@ async fn handle_event(
             }
         }
         Event::InteractionCreate(i) => match i.kind {
-            zephyrus::twilight_exports::InteractionType::ApplicationCommand => {
+            InteractionType::ApplicationCommand => {
                 let clone = Arc::clone(&framework);
                 tokio::spawn(async move {
                     let inner = i.0;
                     clone.process(inner).await;
                 });
             }
-            zephyrus::twilight_exports::InteractionType::MessageComponent => {
+            InteractionType::MessageComponent => {
                 tokio::spawn(
                     handle_message_button_press(i.0, ctx, discord).then(|result| async {
                         match result {
