@@ -49,7 +49,7 @@ pub const CONFIG_DISCORD_TOKEN_ID: &str = "Replybot-DiscordAuthToken-dev";
 #[cfg(not(debug_assertions))]
 pub const CONFIG_DISCORD_TOKEN_ID: &str = "Replybot-DiscordAuthToken";
 pub const CONFIG_TRIGGER_CHANCE: f64 = 0.00;
-pub const CONFIG_REDIS_CONNECTION: &str = "redis://127.0.0.1/";
+pub const CONFIG_REDIS_CONNECTION: &str = "redis://replybot-cache/";
 pub const CONFIG_REDIS_CACHE_KEY_PREFIX: &str = "REPLYBOT_";
 
 pub const BUTTON_THRESHOLD: usize = 1000;
