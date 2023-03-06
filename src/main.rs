@@ -408,20 +408,11 @@ async fn handle_event(
         Event::InteractionCreate(i) => match i.kind {
             InteractionType::ApplicationCommand => {
                 let clone = Arc::clone(&framework);
-                tokio::spawn(async move {
-                    let inner = i.0;
-                    clone.process(inner).await;
-                });
+                let inner = i.0;
+                clone.process(inner).await;
             }
             InteractionType::MessageComponent => {
-                tokio::spawn(
-                    handle_message_button_press(i.0, ctx, discord).then(|result| async {
-                        match result {
-                            Ok(_) => {}
-                            Err(e) => log::error!("{}", e),
-                        }
-                    }),
-                );
+                handle_message_button_press(i.0, ctx, discord).await?
             }
             kind => log::info!("ignoring interaction type: {:?}", kind),
         },
