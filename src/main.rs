@@ -1,5 +1,7 @@
 use anyhow::{bail, Context};
 use aws_sdk_dynamodb::model::AttributeValue;
+use cached::proc_macro::io_cached;
+use cached::AsyncRedisCache;
 use foundation::aws;
 use foundation::constants::{OPENAI_API_BASE_URL, X_API_KEY_HEADER};
 use foundation::extensions::SecretsManagerExtensions;
@@ -47,6 +49,7 @@ pub const CONFIG_DISCORD_TOKEN_ID: &str = "Replybot-DiscordAuthToken-dev";
 #[cfg(not(debug_assertions))]
 pub const CONFIG_DISCORD_TOKEN_ID: &str = "Replybot-DiscordAuthToken";
 pub const CONFIG_TRIGGER_CHANCE: f64 = 0.00;
+pub const CONFIG_REDIS_CONNECTION: &str = "redis://127.0.0.1/";
 
 pub const BUTTON_THRESHOLD: usize = 1000;
 pub const MAX_DISCORD_MESSAGE_LEN: usize = 2000;
@@ -68,12 +71,28 @@ lazy_static! {
     static ref RNG: Arc<Mutex<SmallRng>> = Arc::new(Mutex::new(SmallRng::from_entropy()));
 }
 
+#[io_cached(
+    map_error = r##"|e| anyhow::anyhow!("{:?}", e)"##,
+    type = "AsyncRedisCache<String, String>",
+    create = r##" {
+        AsyncRedisCache::new("REPLYBOT_", 3600)
+            .set_connection_string(CONFIG_REDIS_CONNECTION)
+            .build()
+            .await
+            .expect("error building redis cache")
+    } "##,
+    convert = r#"{ "APIM_API_KEY".to_string() }"#
+)]
+async fn get_api_key(secrets: &aws_sdk_secretsmanager::Client) -> Result<String, anyhow::Error> {
+    secrets.get_secret(CONFIG_APIM_API_KEY_ID).await
+}
+
 async fn make_openai_reqest(
     http: &ClientWithMiddleware,
     secrets: &aws_sdk_secretsmanager::Client,
     prompt: &str,
 ) -> Result<OpenAIChatCompletionResponse, anyhow::Error> {
-    let api_key = secrets.get_secret(CONFIG_APIM_API_KEY_ID).await?;
+    let api_key = get_api_key(secrets).await?;
 
     let response = http
         .post(format!("{OPENAI_API_BASE_URL}/chat/completions"))
@@ -290,8 +309,7 @@ async fn main() -> anyhow::Result<()> {
     let secrets = aws_sdk_secretsmanager::Client::new(&shared_config);
     let tables = aws_sdk_dynamodb::Client::new(&shared_config);
 
-    let url = "redis://127.0.0.1/";
-    let client = redis::Client::open(url)?;
+    let client = redis::Client::open(CONFIG_REDIS_CONNECTION)?;
     let redis = client.get_async_connection().await?;
     log::info!("connected to redis");
 
@@ -318,50 +336,52 @@ async fn main() -> anyhow::Result<()> {
     }) as GuardedBotContext);
 
     let cache = InMemoryCache::builder()
-        .resource_types(ResourceType::MESSAGE)
+        .resource_types(ResourceType::MESSAGE | ResourceType::GUILD)
         .build();
 
     while let Ok(event) = shard.next_event().await {
         cache.update(&event);
         match event.guild_id() {
             Some(guild_id) => {
-                let guild = discord_http.guild(guild_id).await?.model().await?;
-                log::info!("event {:?} from server {:?}", event.kind(), guild.name);
+                let guild_name = match cache.guild(guild_id) {
+                    Some(g) => g.name().to_owned(),
+                    None => discord_http.guild(guild_id).await?.model().await?.name,
+                };
+
+                log::info!("event {:?} from server {:?}", event.kind(), guild_name);
             }
             None => {
                 log::info!("event {:?}", event.kind());
             }
         }
 
-        match event {
-            Event::Ready(_) => {
-                log::info!("Connected on shard");
+        if matches!(event, Event::Ready(_)) {
+            log::info!("connected on shard");
 
-                let activity = MinimalActivity {
-                    kind: ActivityType::Listening,
-                    name: "THE BADDEST by K/DA".to_owned(),
-                    url: None,
-                }
-                .into();
-
-                let request = UpdatePresence::new([activity], false, None, Status::DoNotDisturb)?;
-                let result = shard.command(&request).await;
-                log::info!("presence update: {:?}", result);
+            let activity = MinimalActivity {
+                kind: ActivityType::Listening,
+                name: "THE BADDEST by K/DA".to_owned(),
+                url: None,
             }
+            .into();
 
-            _ => {
-                tokio::spawn(
-                    handle_event(event, Arc::clone(&discord_http), Arc::clone(&bot_context)).then(
-                        |result| async {
-                            match result {
-                                Ok(_) => {}
-                                Err(e) => log::error!("{}", e),
-                            }
-                        },
-                    ),
-                );
-            }
+            let request = UpdatePresence::new([activity], false, None, Status::DoNotDisturb)?;
+            let result = shard.command(&request).await;
+            log::info!("presence update: {:?}", result);
+
+            continue;
         }
+
+        tokio::spawn(
+            handle_event(event, Arc::clone(&discord_http), Arc::clone(&bot_context)).then(
+                |result| async {
+                    match result {
+                        Ok(_) => {}
+                        Err(e) => log::error!("{}", e),
+                    }
+                },
+            ),
+        );
     }
 
     Ok(())
