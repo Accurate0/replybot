@@ -164,7 +164,10 @@ async fn handle_chatgpt_interaction(
         .await?;
 
     if response.len() > BUTTON_THRESHOLD {
-        let chunk = format!("{}...", &response[..BUTTON_THRESHOLD]);
+        let chunk = format!(
+            "{}...",
+            response.chars().take(BUTTON_THRESHOLD).collect::<String>()
+        );
         let button = Button {
             custom_id: Some(hash),
             disabled: false,
