@@ -20,7 +20,7 @@ use reqwest_middleware::ClientWithMiddleware;
 use serde::{Deserialize, Serialize};
 use std::{error::Error, sync::Arc};
 use twilight_cache_inmemory::{InMemoryCache, ResourceType};
-use twilight_gateway::{Event, Shard, ShardId};
+use twilight_gateway::{Event, EventType, Shard, ShardId};
 use twilight_http::Client as DiscordHttpClient;
 use twilight_model::channel::message::component::{Button, ButtonStyle};
 use twilight_model::channel::message::{AllowedMentions, MessageFlags};
@@ -307,7 +307,10 @@ async fn handle_message_button_press(
 async fn main() -> anyhow::Result<()> {
     foundation::log::init_logger(
         log::LevelFilter::Info,
-        vec!["twilight_http_ratelimiting::in_memory::bucket"],
+        vec![
+            "twilight_http_ratelimiting::in_memory::bucket",
+            "twilight_gateway::shard",
+        ],
     );
 
     let shared_config = aws::config::get_shared_config().await;
@@ -346,6 +349,10 @@ async fn main() -> anyhow::Result<()> {
 
     while let Ok(event) = shard.next_event().await {
         cache.update(&event);
+        if matches!(event.kind(), EventType::GatewayHeartbeatAck) {
+            continue;
+        }
+
         match event.guild_id() {
             Some(guild_id) => {
                 let guild_name = match cache.guild(guild_id) {
@@ -360,7 +367,7 @@ async fn main() -> anyhow::Result<()> {
             }
         }
 
-        if matches!(event, Event::Ready(_)) {
+        if matches!(event.kind(), EventType::Ready) {
             log::info!("connected on shard");
 
             let activity = MinimalActivity {
