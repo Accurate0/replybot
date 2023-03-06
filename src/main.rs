@@ -50,6 +50,7 @@ pub const CONFIG_DISCORD_TOKEN_ID: &str = "Replybot-DiscordAuthToken-dev";
 pub const CONFIG_DISCORD_TOKEN_ID: &str = "Replybot-DiscordAuthToken";
 pub const CONFIG_TRIGGER_CHANCE: f64 = 0.00;
 pub const CONFIG_REDIS_CONNECTION: &str = "redis://127.0.0.1/";
+pub const CONFIG_REDIS_CACHE_KEY_PREFIX: &str = "REPLYBOT_";
 
 pub const BUTTON_THRESHOLD: usize = 1000;
 pub const MAX_DISCORD_MESSAGE_LEN: usize = 2000;
@@ -76,7 +77,7 @@ lazy_static! {
     type = "AsyncRedisCache<String, String>",
     create = r##" {
         AsyncRedisCache::new("APIM_API_KEY", 3600)
-            .set_namespace("REPLYBOT_")
+            .set_namespace(CONFIG_REDIS_CACHE_KEY_PREFIX)
             .set_connection_string(CONFIG_REDIS_CONNECTION)
             .build()
             .await
@@ -153,7 +154,7 @@ async fn handle_chatgpt_interaction(
     let redis = &mut bot_ctx.redis;
     redis
         .set(
-            &hash,
+            format!("{}{}", CONFIG_REDIS_CACHE_KEY_PREFIX, &hash),
             serde_json::to_string(interaction_value).context("could not serialize")?,
         )
         .await?;
@@ -231,7 +232,10 @@ async fn handle_message_button_press(
         let mut guard = ctx.lock().await;
         let redis = &mut guard.redis;
 
-        match redis.get::<_, String>(&m.custom_id).await {
+        match redis
+            .get::<_, String>(format!("{}{}", CONFIG_REDIS_CACHE_KEY_PREFIX, &m.custom_id))
+            .await
+        {
             Ok(interaction_value) => serde_json::from_str(&interaction_value)?,
             Err(_) => {
                 log::info!("cache miss for interaction: {}", &m.custom_id);
