@@ -1,6 +1,5 @@
 use anyhow::{bail, Context};
 use aws_sdk_dynamodb::model::AttributeValue;
-use db::RAW_RESPONSE_KEY;
 use foundation::aws;
 use foundation::constants::{OPENAI_API_BASE_URL, X_API_KEY_HEADER};
 use foundation::extensions::SecretsManagerExtensions;
@@ -158,7 +157,7 @@ async fn handle_chatgpt_interaction(
             ),
         )
         .item(
-            RAW_RESPONSE_KEY,
+            db::RAW_RESPONSE_KEY,
             AttributeValue::M(serde_dynamo::to_item(original_response)?),
         )
         .send()
