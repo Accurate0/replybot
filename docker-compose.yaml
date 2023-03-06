@@ -1,0 +1,20 @@
+version: '3.8'
+services:
+  replybot:
+    environment:
+      - AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY
+    build:
+      context: .
+      args:
+        BUILD_MODE: dev
+        BUILD_DIRECTORY: debug
+    container_name: replybot-task
+    depends_on:
+      - redis
+    links:
+      - "redis:replybot-cache"
+
+  redis:
+    image: redis:alpine
+    container_name: replybot-cache
