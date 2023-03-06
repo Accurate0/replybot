@@ -339,6 +339,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "aws-sdk-dynamodb"
+version = "0.24.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "34fc8efd8ed65312b05dc84bb0d7ba79c31802873c4b5676403e220724af39b7"
+dependencies = [
+ "aws-credential-types",
+ "aws-endpoint",
+ "aws-http",
+ "aws-sig-auth",
+ "aws-smithy-async",
+ "aws-smithy-client",
+ "aws-smithy-http",
+ "aws-smithy-http-tower",
+ "aws-smithy-json",
+ "aws-smithy-types",
+ "aws-types",
+ "bytes",
+ "fastrand",
+ "http",
+ "regex",
+ "tokio-stream",
+ "tower",
+ "tracing",
+]
+
+[[package]]
 name = "aws-sdk-s3"
 version = "0.24.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1213,8 +1239,8 @@ dependencies = [
 
 [[package]]
 name = "foundation"
-version = "0.18.0"
-source = "git+https://github.com/Accurate0/foundation.git#b35ebf4de6ac088f5e5f78d1ddfe3298a0f72424"
+version = "0.20.0"
+source = "git+https://github.com/Accurate0/foundation.git#7447b82c107f081acd4f4d689044d11e2198a59d"
 dependencies = [
  "aliri",
  "aliri_clock",
@@ -2398,6 +2424,7 @@ name = "replybot"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "aws-sdk-dynamodb",
  "aws-sdk-secretsmanager",
  "fern",
  "foundation",
@@ -2413,6 +2440,7 @@ dependencies = [
  "reqwest-retry",
  "reqwest-tracing",
  "serde",
+ "serde_dynamo",
  "serde_json",
  "tokio",
  "twilight-cache-inmemory",
@@ -2829,6 +2857,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "serde_dynamo"
+version = "4.0.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "942d371dc47cb746dd7c69cf02d22967ac8031bb300cc5eeec0494fa8fe08c7e"
+dependencies = [
+ "aws-sdk-dynamodb",
+ "serde",
 ]
 
 [[package]]

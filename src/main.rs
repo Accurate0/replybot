@@ -1,4 +1,5 @@
-use anyhow::Context;
+use anyhow::{bail, Context};
+use aws_sdk_dynamodb::model::AttributeValue;
 use foundation::constants::{OPENAI_API_BASE_URL, X_API_KEY_HEADER};
 use foundation::extensions::SecretsManagerExtensions;
 use foundation::types::openai::{
@@ -27,9 +28,16 @@ use twilight_util::builder::InteractionResponseDataBuilder;
 use zephyrus::framework::DefaultError;
 use zephyrus::prelude::*;
 use zephyrus::twilight_exports::{
-    ActionRow, Interaction, InteractionResponse, InteractionResponseType,
+    ActionRow, Interaction, InteractionData, InteractionResponse, InteractionResponseType,
 };
 
+mod db {
+    pub const HASH_KEY: &str = "hash";
+    pub const INTERACTION_VALUE_KEY: &str = "interaction_value";
+    pub const USER_SNOWFLAKE_KEY: &str = "discord_id";
+}
+
+pub const CONFIG_INTERACTION_TABLE: &str = "ReplybotInteraction";
 pub const CONFIG_APIM_API_KEY_ID: &str = "Replybot-ApimApiKey";
 #[cfg(debug_assertions)]
 pub const CONFIG_DISCORD_TOKEN_ID: &str = "Replybot-DiscordAuthToken-dev";
@@ -45,6 +53,7 @@ pub struct BotContext {
     pub http_client: ClientWithMiddleware,
     pub redis: redis::aio::Connection,
     pub secrets: aws_sdk_secretsmanager::Client,
+    pub tables: aws_sdk_dynamodb::Client,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -111,19 +120,40 @@ async fn handle_chatgpt_interaction(
     ctx.acknowledge().await?;
     let response = make_openai_reqest(&bot_ctx.http_client, &bot_ctx.secrets, &prompt).await?;
     let hash = hash::get_sha1(&response);
+    let interaction_value = &InteractionValue {
+        openai_response: response.clone(),
+    };
+
+    let redis = &mut bot_ctx.redis;
+    redis
+        .set(
+            &hash,
+            serde_json::to_string(interaction_value).context("could not serialize")?,
+        )
+        .await?;
+
+    bot_ctx
+        .tables
+        .put_item()
+        .table_name(CONFIG_INTERACTION_TABLE)
+        .item(db::HASH_KEY, AttributeValue::S(hash.clone()))
+        .item(
+            db::INTERACTION_VALUE_KEY,
+            AttributeValue::M(serde_dynamo::to_item(interaction_value)?),
+        )
+        .item(
+            db::USER_SNOWFLAKE_KEY,
+            AttributeValue::S(
+                ctx.interaction
+                    .author_id()
+                    .context("no user id")?
+                    .to_string(),
+            ),
+        )
+        .send()
+        .await?;
 
     if response.len() > BUTTON_THRESHOLD {
-        let redis = &mut bot_ctx.redis;
-        redis
-            .set(
-                &hash,
-                serde_json::to_string(&InteractionValue {
-                    openai_response: response.clone(),
-                })
-                .context("could not serialize")?,
-            )
-            .await?;
-
         let chunk = format!("{}...", &response[..BUTTON_THRESHOLD]);
         let button = Button {
             custom_id: Some(hash),
@@ -158,64 +188,94 @@ async fn handle_message_button_press(
     ctx: Arc<GuardedBotContext>,
     discord: Arc<DiscordHttpClient>,
 ) -> Result<(), anyhow::Error> {
-    let redis = &mut ctx.lock().await.redis;
     let interaction_data = interaction.data.context("no interaction data")?;
-    match interaction_data {
-        zephyrus::twilight_exports::InteractionData::MessageComponent(m) => {
-            let interaction_value = serde_json::from_str::<InteractionValue>(
-                &redis.get::<String, String>(m.custom_id).await?,
-            )?;
+    let m = match interaction_data {
+        InteractionData::MessageComponent(m) => m,
+        _ => bail!("this should not happen"),
+    };
 
-            let interaction_client = discord.interaction(interaction.application_id);
+    let interaction_value: InteractionValue = {
+        let mut guard = ctx.lock().await;
+        let redis = &mut guard.redis;
 
-            let chunks = interaction_value
-                .openai_response
-                .chars()
-                .collect::<Vec<char>>()
-                .chunks(MAX_DISCORD_MESSAGE_LEN)
-                .map(|c| c.iter().collect::<String>())
-                .collect::<Vec<String>>();
-
-            let mut chunks_iter = chunks.iter();
-
-            if let Some(first_chunk) = chunks_iter.next() {
-                let response_data = InteractionResponseDataBuilder::default()
-                    .content(first_chunk)
-                    .flags(MessageFlags::EPHEMERAL)
-                    .build();
-
-                interaction_client
-                    .create_response(
-                        interaction.id,
-                        &interaction.token,
-                        &InteractionResponse {
-                            kind: InteractionResponseType::ChannelMessageWithSource,
-                            data: Some(response_data),
-                        },
-                    )
+        match redis.get::<String, String>(m.custom_id.clone()).await {
+            Ok(interaction_value) => serde_json::from_str(&interaction_value)?,
+            Err(_) => {
+                log::info!("cache miss for interaction: {}", m.custom_id);
+                let tables = &guard.tables;
+                let response = tables
+                    .get_item()
+                    .table_name(CONFIG_INTERACTION_TABLE)
+                    .key(db::HASH_KEY, AttributeValue::S(m.custom_id))
+                    .send()
                     .await?;
 
-                for chunk in chunks_iter {
-                    interaction_client
-                        .create_followup(&interaction.token)
-                        .content(chunk)?
-                        .flags(MessageFlags::EPHEMERAL)
-                        .await?;
-                }
+                serde_dynamo::from_item(
+                    response
+                        .item()
+                        .context("must find item in table")?
+                        .get(db::INTERACTION_VALUE_KEY)
+                        .context("must have key")?
+                        .as_m()
+                        .ok()
+                        .context("must be a map")?
+                        .clone(),
+                )?
             }
         }
-        _ => log::error!("this should not happen"),
     };
+
+    let interaction_client = discord.interaction(interaction.application_id);
+    let chunks = interaction_value
+        .openai_response
+        .chars()
+        // skip button threshold
+        .collect::<Vec<char>>()
+        .chunks(MAX_DISCORD_MESSAGE_LEN)
+        .map(|c| c.iter().collect::<String>())
+        .collect::<Vec<String>>();
+
+    let mut chunks_iter = chunks.iter();
+
+    if let Some(first_chunk) = chunks_iter.next() {
+        let response_data = InteractionResponseDataBuilder::default()
+            .content(first_chunk)
+            .flags(MessageFlags::EPHEMERAL)
+            .build();
+
+        interaction_client
+            .create_response(
+                interaction.id,
+                &interaction.token,
+                &InteractionResponse {
+                    kind: InteractionResponseType::ChannelMessageWithSource,
+                    data: Some(response_data),
+                },
+            )
+            .await?;
+
+        for chunk in chunks_iter {
+            interaction_client
+                .create_followup(&interaction.token)
+                .content(chunk)?
+                .flags(MessageFlags::EPHEMERAL)
+                .await?;
+        }
+    }
 
     Ok(())
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    foundation::log::init_logger(log::LevelFilter::Info);
+    foundation::log::init_logger(
+        log::LevelFilter::Info,
+        vec!["twilight_http_ratelimiting::in_memory::bucket"],
+    );
 
     let shared_config = aws::config::get_shared_config().await;
     let secrets = aws_sdk_secretsmanager::Client::new(&shared_config);
+    let tables = aws_sdk_dynamodb::Client::new(&shared_config);
 
     let url = "redis://127.0.0.1/";
     let client = redis::Client::open(url)?;
@@ -241,6 +301,7 @@ async fn main() -> anyhow::Result<()> {
         http_client,
         redis,
         secrets,
+        tables,
     }) as GuardedBotContext);
 
     let cache = InMemoryCache::builder()
