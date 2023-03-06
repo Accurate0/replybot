@@ -1,5 +1,6 @@
 use anyhow::{bail, Context};
 use aws_sdk_dynamodb::model::AttributeValue;
+use db::RAW_RESPONSE_KEY;
 use foundation::aws;
 use foundation::constants::{OPENAI_API_BASE_URL, X_API_KEY_HEADER};
 use foundation::extensions::SecretsManagerExtensions;
@@ -37,6 +38,7 @@ mod db {
     pub const HASH_KEY: &str = "hash";
     pub const INTERACTION_VALUE_KEY: &str = "interaction_value";
     pub const USER_SNOWFLAKE_KEY: &str = "discord_id";
+    pub const RAW_RESPONSE_KEY: &str = "raw_response";
 }
 
 pub const CONFIG_INTERACTION_TABLE: &str = "ReplybotInteraction";
@@ -71,7 +73,7 @@ async fn make_openai_reqest(
     http: &ClientWithMiddleware,
     secrets: &aws_sdk_secretsmanager::Client,
     prompt: &str,
-) -> Result<String, anyhow::Error> {
+) -> Result<OpenAIChatCompletionResponse, anyhow::Error> {
     let api_key = secrets.get_secret(CONFIG_APIM_API_KEY_ID).await?;
 
     let response = http
@@ -93,13 +95,7 @@ async fn make_openai_reqest(
         .json::<OpenAIChatCompletionResponse>()
         .await?;
 
-    Ok(response
-        .choices
-        .first()
-        .context("no response")?
-        .message
-        .content
-        .clone())
+    Ok(response)
 }
 
 #[error_handler]
@@ -120,7 +116,16 @@ async fn handle_chatgpt_interaction(
     let mut bot_ctx = ctx.data.lock().await;
 
     ctx.acknowledge().await?;
-    let response = make_openai_reqest(&bot_ctx.http_client, &bot_ctx.secrets, &prompt).await?;
+    let original_response =
+        make_openai_reqest(&bot_ctx.http_client, &bot_ctx.secrets, &prompt).await?;
+    let response = original_response
+        .choices
+        .first()
+        .context("no response")?
+        .message
+        .content
+        .clone();
+
     let hash = get_uuid();
     let interaction_value = &InteractionValue {
         openai_response: response.clone(),
@@ -151,6 +156,10 @@ async fn handle_chatgpt_interaction(
                     .context("no user id")?
                     .to_string(),
             ),
+        )
+        .item(
+            RAW_RESPONSE_KEY,
+            AttributeValue::M(serde_dynamo::to_item(original_response)?),
         )
         .send()
         .await?;
@@ -228,10 +237,10 @@ async fn handle_message_button_press(
     };
 
     let interaction_client = discord.interaction(interaction.application_id);
+    // julian said to split messages on code blocks.
     let chunks = interaction_value
         .openai_response
         .chars()
-        // skip button threshold
         .collect::<Vec<char>>()
         .chunks(MAX_DISCORD_MESSAGE_LEN)
         .map(|c| c.iter().collect::<String>())
@@ -378,8 +387,15 @@ async fn handle_event(
                 discord.create_typing_trigger(msg.channel_id).await?;
 
                 let ctx = ctx.lock().await;
-                let response =
+                let original_response =
                     make_openai_reqest(&ctx.http_client, &ctx.secrets, &msg.content).await?;
+                let response = original_response
+                    .choices
+                    .first()
+                    .context("no response")?
+                    .message
+                    .content
+                    .clone();
 
                 discord
                     .create_message(msg.channel_id)
