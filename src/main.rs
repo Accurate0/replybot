@@ -15,6 +15,7 @@ use redis::AsyncCommands;
 use reqwest::ClientBuilder;
 use reqwest_middleware::ClientWithMiddleware;
 use serde::{Deserialize, Serialize};
+use std::time::SystemTime;
 use std::{error::Error, sync::Arc};
 use twilight_cache_inmemory::{InMemoryCache, ResourceType};
 use twilight_gateway::{Event, Shard, ShardId};
@@ -119,7 +120,13 @@ async fn handle_chatgpt_interaction(
 
     ctx.acknowledge().await?;
     let response = make_openai_reqest(&bot_ctx.http_client, &bot_ctx.secrets, &prompt).await?;
-    let hash = hash::get_sha1(&response);
+    let hash = hash::get_sha1(&format!(
+        "{}-{}",
+        &response,
+        SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)?
+            .as_secs()
+    ));
     let interaction_value = &InteractionValue {
         openai_response: response.clone(),
     };
