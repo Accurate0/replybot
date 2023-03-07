@@ -55,10 +55,9 @@ pub const CONFIG_REDIS_CACHE_KEY_PREFIX: &str = "REPLYBOT_";
 pub const BUTTON_THRESHOLD: usize = 1000;
 pub const MAX_DISCORD_MESSAGE_LEN: usize = 2000;
 
-pub type GuardedBotContext = Mutex<BotContext>;
 pub struct BotContext {
     pub http_client: ClientWithMiddleware,
-    pub redis: redis::aio::Connection,
+    pub redis: Mutex<redis::aio::Connection>,
     pub secrets: aws_sdk_secretsmanager::Client,
     pub tables: aws_sdk_dynamodb::Client,
 }
@@ -119,10 +118,7 @@ async fn make_openai_reqest(
 }
 
 #[error_handler]
-async fn handle_interaction_error(
-    _ctx: &SlashContext<Arc<GuardedBotContext>>,
-    error: DefaultError,
-) {
+async fn handle_interaction_error(_ctx: &SlashContext<Arc<BotContext>>, error: DefaultError) {
     log::error!("error handling interaction: {:?}", error);
 }
 
@@ -130,13 +126,12 @@ async fn handle_interaction_error(
 #[description = "fucking ai"]
 #[error_handler(handle_interaction_error)]
 async fn handle_chatgpt_interaction(
-    ctx: &SlashContext<Arc<GuardedBotContext>>,
+    ctx: &SlashContext<Arc<BotContext>>,
     #[description = "say what"] prompt: String,
 ) -> DefaultCommandResult {
     ctx.acknowledge().await?;
 
-    let mut bot_ctx = ctx.data.lock().await;
-
+    let bot_ctx = ctx.data;
     let original_response =
         make_openai_reqest(&bot_ctx.http_client, &bot_ctx.secrets, &prompt).await?;
     let response = original_response
@@ -152,7 +147,7 @@ async fn handle_chatgpt_interaction(
         openai_response: response.clone(),
     };
 
-    let redis = &mut bot_ctx.redis;
+    let redis = &mut bot_ctx.redis.lock().await;
     redis
         .set(
             format!("{}{}", CONFIG_REDIS_CACHE_KEY_PREFIX, &hash),
@@ -220,7 +215,7 @@ async fn handle_chatgpt_interaction(
 
 async fn handle_message_button_press(
     interaction: Interaction,
-    ctx: Arc<GuardedBotContext>,
+    ctx: Arc<BotContext>,
     discord: Arc<DiscordHttpClient>,
 ) -> Result<(), anyhow::Error> {
     let interaction_data = interaction.data.context("no interaction data")?;
@@ -230,8 +225,7 @@ async fn handle_message_button_press(
     };
 
     let interaction_value: InteractionValue = {
-        let mut guard = ctx.lock().await;
-        let redis = &mut guard.redis;
+        let redis = &mut ctx.redis.lock().await;
 
         match redis
             .get::<_, String>(format!("{}{}", CONFIG_REDIS_CACHE_KEY_PREFIX, &m.custom_id))
@@ -240,7 +234,7 @@ async fn handle_message_button_press(
             Ok(interaction_value) => serde_json::from_str(&interaction_value)?,
             Err(_) => {
                 log::info!("cache miss for interaction: {}", &m.custom_id);
-                let tables = &guard.tables;
+                let tables = &ctx.tables;
                 let response = tables
                     .get_item()
                     .table_name(CONFIG_INTERACTION_TABLE)
@@ -337,16 +331,33 @@ async fn main() -> anyhow::Result<()> {
     let discord_http = Arc::new(DiscordHttpClient::new(discord_token.to_owned()));
     let http_client =
         foundation::http::get_default_middleware(ClientBuilder::new().build()?).build();
-    let bot_context = Arc::new(Mutex::new(BotContext {
+    let bot_context = Arc::new(BotContext {
         http_client,
-        redis,
+        redis: Mutex::new(redis),
         secrets,
         tables,
-    }) as GuardedBotContext);
+    });
 
     let cache = InMemoryCache::builder()
         .resource_types(ResourceType::MESSAGE | ResourceType::GUILD)
         .build();
+
+    let app_id = discord_http
+        .current_user_application()
+        .await?
+        .model()
+        .await?
+        .id;
+    let framework = Arc::new(
+        Framework::builder(discord_http.clone(), app_id, bot_context.clone())
+            .command(handle_chatgpt_interaction)
+            .build(),
+    );
+
+    match framework.register_global_commands().await {
+        Err(e) => log::error!("error registering commands: {}", e),
+        _ => {}
+    };
 
     while let Ok(event) = shard.next_event().await {
         cache.update(&event);
@@ -386,14 +397,18 @@ async fn main() -> anyhow::Result<()> {
         }
 
         tokio::spawn(
-            handle_event(event, Arc::clone(&discord_http), Arc::clone(&bot_context)).then(
-                |result| async {
-                    match result {
-                        Ok(_) => {}
-                        Err(e) => log::error!("{}", e),
-                    }
-                },
-            ),
+            handle_event(
+                event,
+                Arc::clone(&discord_http),
+                Arc::clone(&bot_context),
+                Arc::clone(&framework),
+            )
+            .then(|result| async {
+                match result {
+                    Ok(_) => {}
+                    Err(e) => log::error!("{}", e),
+                }
+            }),
         );
     }
 
@@ -403,17 +418,9 @@ async fn main() -> anyhow::Result<()> {
 async fn handle_event(
     event: Event,
     discord: Arc<DiscordHttpClient>,
-    ctx: Arc<GuardedBotContext>,
+    ctx: Arc<BotContext>,
+    framework: Arc<Framework<Arc<BotContext>>>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let app_id = discord.current_user_application().await?.model().await?.id;
-    let framework = Arc::new(
-        Framework::builder(discord.clone(), app_id, ctx.clone())
-            .command(handle_chatgpt_interaction)
-            .build(),
-    );
-
-    framework.register_global_commands().await?;
-
     match event {
         Event::MessageCreate(msg) if !msg.author.bot => {
             let mut rng = RNG.lock().await;
@@ -421,7 +428,6 @@ async fn handle_event(
                 log::info!("triggered reply for: {}", msg.author.id);
                 discord.create_typing_trigger(msg.channel_id).await?;
 
-                let ctx = ctx.lock().await;
                 let original_response =
                     make_openai_reqest(&ctx.http_client, &ctx.secrets, &msg.content).await?;
                 let response = original_response
@@ -443,9 +449,8 @@ async fn handle_event(
         }
         Event::InteractionCreate(i) => match i.kind {
             InteractionType::ApplicationCommand => {
-                let clone = Arc::clone(&framework);
                 let inner = i.0;
-                clone.process(inner).await;
+                framework.process(inner).await;
             }
             InteractionType::MessageComponent => {
                 handle_message_button_press(i.0, ctx, discord).await?
