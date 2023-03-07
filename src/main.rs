@@ -348,15 +348,15 @@ async fn main() -> anyhow::Result<()> {
         .model()
         .await?
         .id;
+
     let framework = Arc::new(
         Framework::builder(discord_http.clone(), app_id, bot_context.clone())
             .command(handle_chatgpt_interaction)
             .build(),
     );
 
-    match framework.register_global_commands().await {
-        Err(e) => log::error!("error registering commands: {}", e),
-        _ => {}
+    if let Err(e) = framework.register_global_commands().await {
+        log::error!("error registering commands: {}", e);
     };
 
     while let Ok(event) = shard.next_event().await {
