@@ -65,6 +65,8 @@ pub struct BotContext {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct InteractionValue {
     openai_response: String,
+    #[serde(default)]
+    prompt: String,
 }
 
 lazy_static! {
@@ -145,6 +147,7 @@ async fn handle_chatgpt_interaction(
     let hash = get_uuid();
     let interaction_value = &InteractionValue {
         openai_response: response.clone(),
+        prompt,
     };
 
     let redis = &mut bot_ctx.redis.lock().await;
