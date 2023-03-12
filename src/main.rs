@@ -10,7 +10,7 @@ use foundation::types::openai::{
 };
 use foundation::util::get_uuid;
 use futures::lock::Mutex;
-use futures::FutureExt;
+use futures::{Future, FutureExt};
 use lazy_static::lazy_static;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
@@ -18,7 +18,9 @@ use redis::AsyncCommands;
 use reqwest::ClientBuilder;
 use reqwest_middleware::ClientWithMiddleware;
 use serde::{Deserialize, Serialize};
+use std::pin::Pin;
 use std::{error::Error, sync::Arc};
+use tracing::instrument;
 use twilight_cache_inmemory::{InMemoryCache, ResourceType};
 use twilight_gateway::{Event, EventType, Shard, ShardId};
 use twilight_http::Client as DiscordHttpClient;
@@ -55,6 +57,7 @@ pub const CONFIG_REDIS_CACHE_KEY_PREFIX: &str = "REPLYBOT_";
 pub const BUTTON_THRESHOLD: usize = 1000;
 pub const MAX_DISCORD_MESSAGE_LEN: usize = 2000;
 
+#[derive(Debug)]
 pub struct BotContext {
     pub http_client: ClientWithMiddleware,
     pub redis: Mutex<redis::aio::Connection>,
@@ -86,10 +89,12 @@ lazy_static! {
     } "##,
     convert = r#"{ "".to_string() }"#
 )]
+#[instrument(skip_all)]
 async fn get_api_key(secrets: &aws_sdk_secretsmanager::Client) -> Result<String, anyhow::Error> {
     secrets.get_secret(CONFIG_APIM_API_KEY_ID).await
 }
 
+#[instrument(skip(http, secrets))]
 async fn make_openai_reqest(
     http: &ClientWithMiddleware,
     secrets: &aws_sdk_secretsmanager::Client,
@@ -124,6 +129,7 @@ async fn handle_interaction_error(_ctx: &SlashContext<Arc<BotContext>>, error: D
     log::error!("error handling interaction: {:?}", error);
 }
 
+#[instrument(skip(ctx))]
 #[command("chatgpt")]
 #[description = "fucking ai"]
 #[error_handler(handle_interaction_error)]
@@ -144,44 +150,65 @@ async fn handle_chatgpt_interaction(
         .content
         .clone();
 
-    let hash = get_uuid();
+    let id = get_uuid();
     let interaction_value = &InteractionValue {
         openai_response: response.clone(),
         prompt,
     };
 
-    let redis = &mut bot_ctx.redis.lock().await;
-    redis
-        .set(
-            format!("{}{}", CONFIG_REDIS_CACHE_KEY_PREFIX, &hash),
-            serde_json::to_string(interaction_value).context("could not serialize")?,
-        )
-        .await?;
+    let update_redis = async {
+        let id = id.clone();
+        log::info!("setting key {} in redis", id);
+        let redis = &mut bot_ctx.redis.lock().await;
 
-    bot_ctx
-        .tables
-        .put_item()
-        .table_name(CONFIG_INTERACTION_TABLE)
-        .item(db::HASH_KEY, AttributeValue::S(hash.clone()))
-        .item(
-            db::INTERACTION_VALUE_KEY,
-            AttributeValue::M(serde_dynamo::to_item(interaction_value)?),
-        )
-        .item(
-            db::USER_SNOWFLAKE_KEY,
-            AttributeValue::S(
-                ctx.interaction
-                    .author_id()
-                    .context("no user id")?
-                    .to_string(),
-            ),
-        )
-        .item(
-            db::RAW_RESPONSE_KEY,
-            AttributeValue::M(serde_dynamo::to_item(original_response)?),
-        )
-        .send()
-        .await?;
+        redis
+            .set(
+                format!("{}{}", CONFIG_REDIS_CACHE_KEY_PREFIX, &id),
+                serde_json::to_string(interaction_value).context("could not serialize")?,
+            )
+            .await?;
+
+        log::info!("[completed] setting key {} in redis", id);
+        Ok::<(), anyhow::Error>(())
+    };
+
+    let update_table = async {
+        log::info!("setting key {} in dynamo", id);
+        bot_ctx
+            .tables
+            .put_item()
+            .table_name(CONFIG_INTERACTION_TABLE)
+            .item(db::HASH_KEY, AttributeValue::S(id.clone()))
+            .item(
+                db::INTERACTION_VALUE_KEY,
+                AttributeValue::M(serde_dynamo::to_item(interaction_value)?),
+            )
+            .item(
+                db::USER_SNOWFLAKE_KEY,
+                AttributeValue::S(
+                    ctx.interaction
+                        .author_id()
+                        .context("no user id")?
+                        .to_string(),
+                ),
+            )
+            .item(
+                db::RAW_RESPONSE_KEY,
+                AttributeValue::M(serde_dynamo::to_item(original_response)?),
+            )
+            .send()
+            .await?;
+        log::info!("[completed] setting key {} in dynamo", id);
+        Ok::<(), anyhow::Error>(())
+    };
+
+    let futures: [Pin<Box<dyn Future<Output = Result<(), anyhow::Error>> + Send>>; 2] =
+        [Box::pin(update_redis), Box::pin(update_table)];
+
+    let completed = futures::future::join_all(futures).await;
+    for task in completed {
+        task?
+    }
 
     if response.len() > BUTTON_THRESHOLD {
         let chunk = format!(
@@ -189,7 +216,7 @@ async fn handle_chatgpt_interaction(
             response.chars().take(BUTTON_THRESHOLD).collect::<String>()
         );
         let button = Button {
-            custom_id: Some(hash),
+            custom_id: Some(id),
             disabled: false,
             emoji: None,
             label: Some("Click to see all".to_owned()),
@@ -216,6 +243,7 @@ async fn handle_chatgpt_interaction(
     Ok(())
 }
 
+#[instrument(skip_all)]
 async fn handle_message_button_press(
     interaction: Interaction,
     ctx: Arc<BotContext>,
@@ -418,6 +446,7 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[instrument(skip_all)]
 async fn handle_event(
     event: Event,
     discord: Arc<DiscordHttpClient>,
