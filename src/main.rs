@@ -333,7 +333,7 @@ async fn handle_message_button_press(
 async fn main() -> anyhow::Result<()> {
     foundation::log::init_logger(
         log::LevelFilter::Info,
-        vec![
+        &[
             "twilight_http_ratelimiting::in_memory::bucket",
             "twilight_gateway::shard",
         ],
