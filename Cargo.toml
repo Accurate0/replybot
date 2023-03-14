@@ -6,30 +6,30 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.69"
 fern = "0.6.1"
-futures = "0.3.26"
+futures = "0.3.27"
 log = "0.4.17"
-serde = "1.0.152"
+serde = "1.0.156"
 tokio = { version = "1.26.0", features = ["rt", "macros", "rt-multi-thread"] }
 twilight-cache-inmemory = "0.15"
 twilight-gateway = "0.15"
 twilight-http = "0.15"
 openssl = { version = "0.10", features = ["vendored"] }
 twilight-model = "0.15"
-twilight-util = { version = "0.15.0", features = ["builder"] }
+twilight-util = { version = "0.15.1", features = ["builder"] }
 reqwest = { version = "0.11.14", features = ["json", "gzip"] }
-reqwest-middleware = "0.2.0"
-reqwest-tracing = "0.4.0"
-reqwest-retry = "0.2.1"
+reqwest-middleware = "0.2.1"
+reqwest-tracing = "0.4.1"
+reqwest-retry = "0.2.2"
 http = "0.2.9"
 rand = { version = "0.8.5", features = ["small_rng"] }
-serde_json = "1.0.93"
+serde_json = "1.0.94"
 lazy_static = "1.4.0"
 foundation = { git = "https://github.com/Accurate0/foundation.git" }
 zephyrus = { git = "https://github.com/AlvaroMS25/zephyrus.git" }
 redis = { version = "0.22.3", features = ["aio", "tokio-comp"] }
 aws-sdk-secretsmanager = "0.24.0"
 aws-sdk-dynamodb = "0.24.0"
-serde_dynamo = { version = "4.0.12", features = ["aws-sdk-dynamodb+0_24"] }
+serde_dynamo = { version = "4.1.0", features = ["aws-sdk-dynamodb+0_24"] }
 cached = { version = "0.42.0", features = ["redis_tokio"] }
 tracing = "0.1.37"
 
