@@ -4046,7 +4046,8 @@ checksum = "09041cd90cf85f7f8b2df60c646f853b7f535ce68f85244eb6731cf89fa498ec"
 [[package]]
 name = "zephyrus"
 version = "0.9.0"
-source = "git+https://github.com/AlvaroMS25/zephyrus.git#a96f54e066421a6dc88e24c248c4980fcd9894ac"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "70d49ad1b664975194f96870c768947a2a916897d39af23841cacceacf0ae88c"
 dependencies = [
  "async-trait",
  "parking_lot 0.12.1",
@@ -4060,7 +4061,8 @@ dependencies = [
 [[package]]
 name = "zephyrus-macros"
 version = "0.9.0"
-source = "git+https://github.com/AlvaroMS25/zephyrus.git#a96f54e066421a6dc88e24c248c4980fcd9894ac"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c1db23587fcfe3d166cb25bf06e036bcc25e392a7e08e9e0b46e079c728aacee"
 dependencies = [
  "proc-macro2",
  "quote",
