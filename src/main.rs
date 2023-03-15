@@ -174,8 +174,12 @@ async fn handle_stats_interaction(
                 let raw_response = item.get(db::RAW_RESPONSE_KEY);
                 match raw_response {
                     Some(raw_response) => {
-                        let resp = serde_dynamo::from_item(raw_response.as_m().unwrap().clone())?;
-                        Ok(resp)
+                        if let Ok(raw_response) = raw_response.as_m() {
+                            let resp = serde_dynamo::from_item(raw_response.clone())?;
+                            Ok(resp)
+                        } else {
+                            bail!("non existent")
+                        }
                     }
                     None => {
                         bail!("non existent")
