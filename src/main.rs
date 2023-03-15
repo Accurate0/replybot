@@ -30,6 +30,8 @@ use twilight_model::channel::message::{AllowedMentions, MessageFlags};
 use twilight_model::gateway::payload::outgoing::UpdatePresence;
 use twilight_model::gateway::presence::{ActivityType, MinimalActivity, Status};
 use twilight_model::gateway::Intents;
+use twilight_model::user::User;
+use twilight_util::builder::embed::{EmbedBuilder, EmbedFieldBuilder, ImageSource};
 use twilight_util::builder::InteractionResponseDataBuilder;
 use zephyrus::framework::DefaultError;
 use zephyrus::prelude::*;
@@ -46,6 +48,7 @@ mod db {
 }
 
 pub const CONFIG_INTERACTION_TABLE: &str = "ReplybotInteraction";
+pub const CONFIG_INTERACTION_TABLE_USER_INDEX: &str = "DiscordIdIndex";
 pub const CONFIG_APIM_API_KEY_ID: &str = "Replybot-ApimApiKey";
 #[cfg(debug_assertions)]
 pub const CONFIG_DISCORD_TOKEN_ID: &str = "Replybot-DiscordAuthToken-dev";
@@ -128,6 +131,102 @@ async fn make_openai_reqest(
 #[error_handler]
 async fn handle_interaction_error(_ctx: &SlashContext<Arc<BotContext>>, error: DefaultError) {
     log::error!("error handling interaction: {:?}", error);
+}
+
+#[instrument(skip(ctx))]
+#[command("stats")]
+#[description = "i wonder who costs the most (julian)"]
+#[error_handler(handle_interaction_error)]
+async fn handle_stats_interaction(
+    ctx: &SlashContext<Arc<BotContext>>,
+    #[description = "check julian"] user: Option<User>,
+) -> DefaultCommandResult {
+    ctx.acknowledge().await?;
+
+    let user = user.unwrap_or(
+        ctx.interaction
+            .author()
+            .cloned()
+            .context("must have author")?,
+    );
+
+    let user_id = user.id;
+    let tables = &ctx.data.tables;
+    let response = tables
+        .query()
+        .table_name(CONFIG_INTERACTION_TABLE)
+        .index_name(CONFIG_INTERACTION_TABLE_USER_INDEX)
+        .key_condition_expression("#user = :user_id")
+        .expression_attribute_names("#user", db::USER_SNOWFLAKE_KEY)
+        .expression_attribute_values(":user_id", AttributeValue::S(user_id.to_string()))
+        .send()
+        .await?;
+
+    // price $0.002 / 1K tokens
+    let price_per_token = 2e-6_f64;
+
+    let all_responses = response
+        .items()
+        .context("must have items")?
+        .iter()
+        .map(
+            |item| -> Result<OpenAIChatCompletionResponse, anyhow::Error> {
+                let raw_response = item.get(db::RAW_RESPONSE_KEY);
+                match raw_response {
+                    Some(raw_response) => {
+                        let resp = serde_dynamo::from_item(raw_response.as_m().unwrap().clone())?;
+                        Ok(resp)
+                    }
+                    None => {
+                        bail!("non existent")
+                    }
+                }
+            },
+        )
+        .filter(|item| item.is_ok());
+
+    let total_tokens = all_responses.fold(0i64, |accumulator, item| {
+        // safe now, we filtered.
+        let item = item.unwrap();
+        let total_tokens = item.usage.total_tokens;
+
+        accumulator + total_tokens
+    }) as f64;
+
+    let total_price = total_tokens * price_per_token;
+
+    let colour = user.accent_color.unwrap_or(10830402);
+    let embed = EmbedBuilder::new();
+    let embed = if let Some(avatar) = user.avatar {
+        let url = format!(
+            "https://cdn.discordapp.com/avatars/{}/{}.png",
+            user.id.to_string(),
+            avatar.to_string()
+        );
+        embed.thumbnail(ImageSource::url(url)?)
+    } else {
+        embed
+    };
+
+    let embed = embed
+        .color(colour)
+        .field(EmbedFieldBuilder::new(
+            "User",
+            format!("{}#{}", user.name, user.discriminator),
+        ))
+        .field(EmbedFieldBuilder::new("Price", format!("${}", total_price)))
+        .field(EmbedFieldBuilder::new(
+            "Total Tokens",
+            total_tokens.to_string(),
+        ))
+        .build();
+
+    ctx.interaction_client
+        .update_response(&ctx.interaction.token)
+        .embeds(Some(&[embed]))?
+        .await?;
+
+    Ok(())
 }
 
 #[instrument(skip(ctx))]
@@ -384,6 +483,7 @@ async fn main() -> anyhow::Result<()> {
     let framework = Arc::new(
         Framework::builder(discord_http.clone(), app_id, bot_context.clone())
             .command(handle_chatgpt_interaction)
+            .command(handle_stats_interaction)
             .build(),
     );
 
