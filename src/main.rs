@@ -11,6 +11,7 @@ use foundation::types::openai::{
 use foundation::util::get_uuid;
 use futures::lock::Mutex;
 use futures::{Future, FutureExt};
+use itertools::Itertools;
 use lazy_static::lazy_static;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
@@ -54,7 +55,7 @@ pub const CONFIG_TRIGGER_CHANCE: f64 = 0.00;
 pub const CONFIG_REDIS_CONNECTION: &str = "redis://replybot-cache/";
 pub const CONFIG_REDIS_CACHE_KEY_PREFIX: &str = "REPLYBOT_";
 
-pub const BUTTON_THRESHOLD: usize = 1000;
+pub const LINE_COUNT_THRESHOLD: usize = 18;
 pub const MAX_DISCORD_MESSAGE_LEN: usize = 2000;
 
 #[derive(Debug)]
@@ -210,11 +211,11 @@ async fn handle_chatgpt_interaction(
         task?
     }
 
-    if response.len() > BUTTON_THRESHOLD {
-        let chunk = format!(
-            "{}...",
-            response.chars().take(BUTTON_THRESHOLD).collect::<String>()
-        );
+    let lines = response.lines().collect::<Vec<&str>>();
+    if lines.len() > LINE_COUNT_THRESHOLD {
+        let lines_to_show = lines.iter().take(LINE_COUNT_THRESHOLD).join("\n");
+
+        let chunk = format!("{}...", lines_to_show);
         let button = Button {
             custom_id: Some(id),
             disabled: false,
