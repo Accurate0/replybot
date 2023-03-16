@@ -218,7 +218,10 @@ async fn handle_stats_interaction(
             "User",
             format!("{}#{}", user.name, user.discriminator),
         ))
-        .field(EmbedFieldBuilder::new("Price", format!("${}", total_price)))
+        .field(EmbedFieldBuilder::new(
+            "Price",
+            format!("${:.4}", total_price),
+        ))
         .field(EmbedFieldBuilder::new(
             "Total Tokens",
             total_tokens.to_string(),
