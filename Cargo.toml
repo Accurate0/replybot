@@ -32,7 +32,6 @@ aws-sdk-dynamodb = "0.24.0"
 serde_dynamo = { version = "4.1.0", features = ["aws-sdk-dynamodb+0_24"] }
 cached = { version = "0.42.0", features = ["redis_tokio"] }
 tracing = "0.1.37"
-itertools = "0.10.5"
 
 [[bin]]
 name = "replybot"
