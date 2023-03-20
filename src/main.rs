@@ -1,6 +1,7 @@
 use anyhow::{bail, Context};
 use aws_sdk_dynamodb::model::AttributeValue;
-use cached::proc_macro::once;
+use cached::proc_macro::io_cached;
+use cached::AsyncRedisCache;
 use foundation::aws;
 use foundation::constants::{OPENAI_API_BASE_URL, X_API_KEY_HEADER};
 use foundation::extensions::SecretsManagerExtensions;
@@ -62,7 +63,7 @@ pub const MAX_DISCORD_MESSAGE_LEN: usize = 2000;
 #[derive(Debug)]
 pub struct BotContext {
     pub http_client: ClientWithMiddleware,
-    pub redis: Option<Mutex<redis::aio::Connection>>,
+    pub redis: Mutex<redis::aio::Connection>,
     pub secrets: aws_sdk_secretsmanager::Client,
     pub tables: aws_sdk_dynamodb::Client,
 }
@@ -78,7 +79,19 @@ lazy_static! {
     static ref RNG: Arc<Mutex<SmallRng>> = Arc::new(Mutex::new(SmallRng::from_entropy()));
 }
 
-#[once(time = 3600, result = true, sync_writes = true)]
+#[io_cached(
+    map_error = r##"|e| anyhow::anyhow!("{:?}", e)"##,
+    type = "AsyncRedisCache<String, String>",
+    create = r##" {
+        AsyncRedisCache::new("APIM_API_KEY", 3600)
+            .set_namespace(CONFIG_REDIS_CACHE_KEY_PREFIX)
+            .set_connection_string(CONFIG_REDIS_CONNECTION)
+            .build()
+            .await
+            .expect("error building redis cache")
+    } "##,
+    convert = r#"{ "".to_string() }"#
+)]
 #[instrument(skip_all)]
 async fn get_api_key(secrets: &aws_sdk_secretsmanager::Client) -> Result<String, anyhow::Error> {
     secrets.get_secret(CONFIG_APIM_API_KEY_ID).await
@@ -250,24 +263,18 @@ async fn handle_chatgpt_interaction(
     };
 
     let update_redis = async {
-        match &bot_ctx.redis {
-            Some(redis) => {
-                let id = id.clone();
-                log::info!("setting key {} in redis", id);
-                let redis = &mut redis.lock().await;
+        let id = id.clone();
+        log::info!("setting key {} in redis", id);
+        let redis = &mut bot_ctx.redis.lock().await;
 
-                redis
-                    .set(
-                        format!("{}{}", CONFIG_REDIS_CACHE_KEY_PREFIX, &id),
-                        serde_json::to_string(interaction_value).context("could not serialize")?,
-                    )
-                    .await?;
+        redis
+            .set(
+                format!("{}{}", CONFIG_REDIS_CACHE_KEY_PREFIX, &id),
+                serde_json::to_string(interaction_value).context("could not serialize")?,
+            )
+            .await?;
 
-                log::info!("[completed] setting key {} in redis", id);
-            }
-            None => {}
-        }
-
+        log::info!("[completed] setting key {} in redis", id);
         Ok::<(), anyhow::Error>(())
     };
 
@@ -342,31 +349,6 @@ async fn handle_chatgpt_interaction(
     Ok(())
 }
 
-async fn get_interaction_from_table(
-    tables: &aws_sdk_dynamodb::Client,
-    key: &str,
-) -> Result<InteractionValue, anyhow::Error> {
-    log::info!("cache miss for interaction: {}", &key);
-    let response = tables
-        .get_item()
-        .table_name(CONFIG_INTERACTION_TABLE)
-        .key(db::HASH_KEY, AttributeValue::S(key.to_owned()))
-        .send()
-        .await?;
-
-    Ok(serde_dynamo::from_item(
-        response
-            .item()
-            .context("must find item in table")?
-            .get(db::INTERACTION_VALUE_KEY)
-            .context("must have key")?
-            .as_m()
-            .ok()
-            .context("must be a map")?
-            .clone(),
-    )?)
-}
-
 #[instrument(skip_all)]
 async fn handle_message_button_press(
     interaction: Interaction,
@@ -380,19 +362,35 @@ async fn handle_message_button_press(
     };
 
     let interaction_value: InteractionValue = {
-        match &ctx.redis {
-            Some(redis) => {
-                let redis = &mut redis.lock().await;
+        let redis = &mut ctx.redis.lock().await;
 
-                match redis
-                    .get::<_, String>(format!("{}{}", CONFIG_REDIS_CACHE_KEY_PREFIX, &m.custom_id))
-                    .await
-                {
-                    Ok(interaction_value) => serde_json::from_str(&interaction_value)?,
-                    Err(_) => get_interaction_from_table(&ctx.tables, &m.custom_id).await?,
-                }
+        match redis
+            .get::<_, String>(format!("{}{}", CONFIG_REDIS_CACHE_KEY_PREFIX, &m.custom_id))
+            .await
+        {
+            Ok(interaction_value) => serde_json::from_str(&interaction_value)?,
+            Err(_) => {
+                log::info!("cache miss for interaction: {}", &m.custom_id);
+                let tables = &ctx.tables;
+                let response = tables
+                    .get_item()
+                    .table_name(CONFIG_INTERACTION_TABLE)
+                    .key(db::HASH_KEY, AttributeValue::S(m.custom_id))
+                    .send()
+                    .await?;
+
+                serde_dynamo::from_item(
+                    response
+                        .item()
+                        .context("must find item in table")?
+                        .get(db::INTERACTION_VALUE_KEY)
+                        .context("must have key")?
+                        .as_m()
+                        .ok()
+                        .context("must be a map")?
+                        .clone(),
+                )?
             }
-            None => get_interaction_from_table(&ctx.tables, &m.custom_id).await?,
         }
     };
 
@@ -452,11 +450,8 @@ async fn main() -> anyhow::Result<()> {
     let tables = aws_sdk_dynamodb::Client::new(&shared_config);
 
     let client = redis::Client::open(CONFIG_REDIS_CONNECTION)?;
-    let redis = match client.get_async_connection().await {
-        Ok(redis) => Some(Mutex::new(redis)),
-        Err(_) => None,
-    };
-    log::info!("connected to redis: {}", redis.is_some());
+    let redis = client.get_async_connection().await?;
+    log::info!("connected to redis");
 
     let discord_token = secrets.get_secret(CONFIG_DISCORD_TOKEN_ID).await?;
     log::info!(
@@ -475,7 +470,7 @@ async fn main() -> anyhow::Result<()> {
         foundation::http::get_default_middleware(ClientBuilder::new().build()?).build();
     let bot_context = Arc::new(BotContext {
         http_client,
-        redis,
+        redis: Mutex::new(redis),
         secrets,
         tables,
     });
