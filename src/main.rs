@@ -1,6 +1,5 @@
 use anyhow::{bail, Context};
 use aws_sdk_dynamodb::model::AttributeValue;
-use cached::proc_macro::once;
 use foundation::aws;
 use foundation::constants::{OPENAI_API_BASE_URL, X_API_KEY_HEADER};
 use foundation::extensions::SecretsManagerExtensions;
@@ -10,9 +9,10 @@ use foundation::types::openai::{
 use foundation::util::get_uuid;
 use futures::lock::Mutex;
 use futures::{Future, FutureExt};
+use http::HeaderMap;
 use lazy_static::lazy_static;
 use rand::rngs::SmallRng;
-use rand::{Rng, SeedableRng};
+use rand::SeedableRng;
 use redis::AsyncCommands;
 use reqwest::ClientBuilder;
 use reqwest_middleware::ClientWithMiddleware;
@@ -24,7 +24,7 @@ use twilight_cache_inmemory::{InMemoryCache, ResourceType};
 use twilight_gateway::{Event, EventType, Shard, ShardId};
 use twilight_http::Client as DiscordHttpClient;
 use twilight_model::channel::message::component::{Button, ButtonStyle};
-use twilight_model::channel::message::{AllowedMentions, MessageFlags};
+use twilight_model::channel::message::MessageFlags;
 use twilight_model::gateway::payload::outgoing::UpdatePresence;
 use twilight_model::gateway::presence::{ActivityType, MinimalActivity, Status};
 use twilight_model::gateway::Intents;
@@ -52,7 +52,6 @@ pub const CONFIG_APIM_API_KEY_ID: &str = "Replybot-ApimApiKey";
 pub const CONFIG_DISCORD_TOKEN_ID: &str = "Replybot-DiscordAuthToken-dev";
 #[cfg(not(debug_assertions))]
 pub const CONFIG_DISCORD_TOKEN_ID: &str = "Replybot-DiscordAuthToken";
-pub const CONFIG_TRIGGER_CHANCE: f64 = 0.00;
 pub const CONFIG_REDIS_CONNECTION: &str = "redis://replybot-cache/";
 pub const CONFIG_REDIS_CACHE_KEY_PREFIX: &str = "REPLYBOT_";
 
@@ -78,24 +77,13 @@ lazy_static! {
     static ref RNG: Arc<Mutex<SmallRng>> = Arc::new(Mutex::new(SmallRng::from_entropy()));
 }
 
-#[once(time = 3600, result = true, sync_writes = true)]
-#[instrument(skip_all)]
-async fn get_api_key(secrets: &aws_sdk_secretsmanager::Client) -> Result<String, anyhow::Error> {
-    secrets.get_secret(CONFIG_APIM_API_KEY_ID).await
-}
-
-#[instrument(skip(http, secrets))]
+#[instrument(skip(http))]
 async fn make_openai_reqest(
     http: &ClientWithMiddleware,
-    secrets: &aws_sdk_secretsmanager::Client,
     prompt: &str,
 ) -> Result<OpenAIChatCompletionResponse, anyhow::Error> {
-    let api_key = get_api_key(secrets).await?;
-
     let response = http
         .post(format!("{OPENAI_API_BASE_URL}/chat/completions"))
-        .header(X_API_KEY_HEADER, api_key)
-        .header("Content-Type", "application/json")
         .json(&OpenAIChatCompletionRequest {
             model: "gpt-3.5-turbo".to_owned(),
             max_tokens: None,
@@ -190,8 +178,7 @@ async fn handle_stats_interaction(
     let embed = if let Some(avatar) = user.avatar {
         let url = format!(
             "https://cdn.discordapp.com/avatars/{}/{}.png",
-            user.id.to_string(),
-            avatar.to_string()
+            user.id, avatar
         );
         embed.thumbnail(ImageSource::url(url)?)
     } else {
@@ -233,8 +220,7 @@ async fn handle_chatgpt_interaction(
     ctx.acknowledge().await?;
 
     let bot_ctx = ctx.data;
-    let original_response =
-        make_openai_reqest(&bot_ctx.http_client, &bot_ctx.secrets, &prompt).await?;
+    let original_response = make_openai_reqest(&bot_ctx.http_client, &prompt).await?;
     let response = original_response
         .choices
         .first()
@@ -301,6 +287,7 @@ async fn handle_chatgpt_interaction(
         Ok::<(), anyhow::Error>(())
     };
 
+    #[allow(clippy::type_complexity)]
     let futures: [Pin<Box<dyn Future<Output = Result<(), anyhow::Error>> + Send>>; 2] =
         [Box::pin(update_redis), Box::pin(update_table)];
 
@@ -464,6 +451,9 @@ async fn main() -> anyhow::Result<()> {
         CONFIG_DISCORD_TOKEN_ID
     );
 
+    let api_key = secrets.get_secret(CONFIG_APIM_API_KEY_ID).await?;
+    log::info!("loaded api key from secret: {}", CONFIG_APIM_API_KEY_ID);
+
     let mut shard = Shard::new(
         ShardId::ONE,
         discord_token.clone(),
@@ -471,8 +461,16 @@ async fn main() -> anyhow::Result<()> {
     );
 
     let discord_http = Arc::new(DiscordHttpClient::new(discord_token.to_owned()));
-    let http_client =
-        foundation::http::get_default_middleware(ClientBuilder::new().build()?).build();
+
+    let mut headers = HeaderMap::new();
+    headers.append(X_API_KEY_HEADER, api_key.parse()?);
+    headers.append("Content-Type", "application/json".parse()?);
+
+    let http_client = foundation::http::get_default_middleware(
+        ClientBuilder::new().default_headers(headers).build()?,
+    )
+    .build();
+
     let bot_context = Arc::new(BotContext {
         http_client,
         redis,
@@ -532,10 +530,17 @@ async fn main() -> anyhow::Result<()> {
             }
             .into();
 
-            let request = UpdatePresence::new([activity], false, None, Status::DoNotDisturb)?;
+            let request = UpdatePresence::new([activity], false, None, Status::Online)?;
             let result = shard.command(&request).await;
             log::info!("presence update: {:?}", result);
 
+            continue;
+        }
+
+        if matches!(
+            event.kind(),
+            EventType::MessageCreate | EventType::MessageUpdate
+        ) {
             continue;
         }
 
@@ -565,33 +570,8 @@ async fn handle_event(
     ctx: Arc<BotContext>,
     framework: Arc<Framework<Arc<BotContext>>>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    match event {
-        Event::MessageCreate(msg) if !msg.author.bot => {
-            let mut rng = RNG.lock().await;
-            if rng.gen_bool(CONFIG_TRIGGER_CHANCE) {
-                log::info!("triggered reply for: {}", msg.author.id);
-                discord.create_typing_trigger(msg.channel_id).await?;
-
-                let original_response =
-                    make_openai_reqest(&ctx.http_client, &ctx.secrets, &msg.content).await?;
-                let response = original_response
-                    .choices
-                    .first()
-                    .context("no response")?
-                    .message
-                    .content
-                    .clone();
-
-                discord
-                    .create_message(msg.channel_id)
-                    .reply(msg.id)
-                    .fail_if_not_exists(false)
-                    .allowed_mentions(Some(&AllowedMentions::default()))
-                    .content(&response)?
-                    .await?;
-            }
-        }
-        Event::InteractionCreate(i) => match i.kind {
+    if let Event::InteractionCreate(i) = event {
+        match i.kind {
             InteractionType::ApplicationCommand => {
                 let inner = i.0;
                 framework.process(inner).await;
@@ -600,9 +580,7 @@ async fn handle_event(
                 handle_message_button_press(i.0, ctx, discord).await?
             }
             kind => log::info!("ignoring interaction type: {:?}", kind),
-        },
-        // Other events here...
-        _ => {}
+        }
     }
 
     Ok(())
