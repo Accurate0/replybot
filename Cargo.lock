@@ -1318,7 +1318,8 @@ dependencies = [
 
 [[package]]
 name = "foundation"
-version = "0.28.0"
+version = "0.29.0"
+source = "git+https://github.com/Accurate0/foundation.git#8f307d2fa2e9b5a3cb34e4631aaa20c3869788c7"
 dependencies = [
  "aliri",
  "aliri_clock",
