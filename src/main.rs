@@ -1,8 +1,9 @@
 use anyhow::{bail, Context};
 use aws_sdk_dynamodb::model::AttributeValue;
+use config::Config;
 use foundation::aws;
+use foundation::config::config_sources::SecretsManagerSource;
 use foundation::constants::{OPENAI_API_BASE_URL, X_API_KEY_HEADER};
-use foundation::extensions::SecretsManagerExtensions;
 use foundation::types::openai::{
     ChatMessage, OpenAIChatCompletionRequest, OpenAIChatCompletionResponse,
 };
@@ -62,7 +63,6 @@ pub const MAX_DISCORD_MESSAGE_LEN: usize = 2000;
 pub struct BotContext {
     pub http_client: ClientWithMiddleware,
     pub redis: Option<Mutex<redis::aio::Connection>>,
-    pub secrets: aws_sdk_secretsmanager::Client,
     pub tables: aws_sdk_dynamodb::Client,
 }
 
@@ -424,6 +424,19 @@ async fn handle_message_button_press(
     Ok(())
 }
 
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "PascalCase")]
+pub struct BotConfig {
+    pub apim_api_key: String,
+    #[cfg(debug_assertions)]
+    #[serde(rename = "DiscordAuthToken-dev")]
+    pub discord_token: String,
+
+    #[cfg(not(debug_assertions))]
+    #[serde(rename = "DiscordAuthToken")]
+    pub discord_token: String,
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     foundation::log::init_logger(
@@ -436,6 +449,14 @@ async fn main() -> anyhow::Result<()> {
 
     let shared_config = aws::config::get_shared_config().await;
     let secrets = aws_sdk_secretsmanager::Client::new(&shared_config);
+
+    let secret_manager_source = SecretsManagerSource::new("Replybot-".to_owned(), secrets);
+    let config = Config::builder()
+        .add_async_source(secret_manager_source)
+        .build()
+        .await?
+        .try_deserialize::<BotConfig>()?;
+
     let tables = aws_sdk_dynamodb::Client::new(&shared_config);
 
     let client = redis::Client::open(CONFIG_REDIS_CONNECTION)?;
@@ -445,14 +466,8 @@ async fn main() -> anyhow::Result<()> {
     };
     log::info!("connected to redis: {}", redis.is_some());
 
-    let discord_token = secrets.get_secret(CONFIG_DISCORD_TOKEN_ID).await?;
-    log::info!(
-        "loaded discord token from secret: {}",
-        CONFIG_DISCORD_TOKEN_ID
-    );
-
-    let api_key = secrets.get_secret(CONFIG_APIM_API_KEY_ID).await?;
-    log::info!("loaded api key from secret: {}", CONFIG_APIM_API_KEY_ID);
+    let discord_token = config.discord_token;
+    let api_key = config.apim_api_key;
 
     let mut shard = Shard::new(
         ShardId::ONE,
@@ -474,7 +489,6 @@ async fn main() -> anyhow::Result<()> {
     let bot_context = Arc::new(BotContext {
         http_client,
         redis,
-        secrets,
         tables,
     });
 
