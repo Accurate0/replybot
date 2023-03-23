@@ -1,6 +1,6 @@
 use anyhow::{bail, Context};
 use aws_sdk_dynamodb::model::AttributeValue;
-use config::Config;
+use config::{Config, Environment};
 use foundation::aws;
 use foundation::config::config_sources::SecretsManagerSource;
 use foundation::constants::{OPENAI_API_BASE_URL, X_API_KEY_HEADER};
@@ -46,16 +46,6 @@ mod db {
     pub const RAW_RESPONSE_KEY: &str = "raw_response";
 }
 
-pub const CONFIG_INTERACTION_TABLE: &str = "ReplybotInteraction";
-pub const CONFIG_INTERACTION_TABLE_USER_INDEX: &str = "DiscordIdIndex";
-pub const CONFIG_APIM_API_KEY_ID: &str = "Replybot-ApimApiKey";
-#[cfg(debug_assertions)]
-pub const CONFIG_DISCORD_TOKEN_ID: &str = "Replybot-DiscordAuthToken-dev";
-#[cfg(not(debug_assertions))]
-pub const CONFIG_DISCORD_TOKEN_ID: &str = "Replybot-DiscordAuthToken";
-pub const CONFIG_REDIS_CONNECTION: &str = "redis://replybot-cache/";
-pub const CONFIG_REDIS_CACHE_KEY_PREFIX: &str = "REPLYBOT_";
-
 pub const BUTTON_THRESHOLD: usize = 1000;
 pub const MAX_DISCORD_MESSAGE_LEN: usize = 2000;
 
@@ -64,6 +54,7 @@ pub struct BotContext {
     pub http_client: ClientWithMiddleware,
     pub redis: Option<Mutex<redis::aio::Connection>>,
     pub tables: aws_sdk_dynamodb::Client,
+    pub config: BotConfig,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -128,8 +119,8 @@ async fn handle_stats_interaction(
     let tables = &ctx.data.tables;
     let response = tables
         .query()
-        .table_name(CONFIG_INTERACTION_TABLE)
-        .index_name(CONFIG_INTERACTION_TABLE_USER_INDEX)
+        .table_name(&ctx.data.config.interaction_table_name)
+        .index_name(&ctx.data.config.interaction_table_user_index_name)
         .key_condition_expression("#user = :user_id")
         .expression_attribute_names("#user", db::USER_SNOWFLAKE_KEY)
         .expression_attribute_values(":user_id", AttributeValue::S(user_id.to_string()))
@@ -244,7 +235,7 @@ async fn handle_chatgpt_interaction(
 
                 redis
                     .set(
-                        format!("{}{}", CONFIG_REDIS_CACHE_KEY_PREFIX, &id),
+                        &id,
                         serde_json::to_string(interaction_value).context("could not serialize")?,
                     )
                     .await?;
@@ -262,7 +253,7 @@ async fn handle_chatgpt_interaction(
         bot_ctx
             .tables
             .put_item()
-            .table_name(CONFIG_INTERACTION_TABLE)
+            .table_name(&ctx.data.config.interaction_table_name)
             .item(db::HASH_KEY, AttributeValue::S(id.clone()))
             .item(
                 db::INTERACTION_VALUE_KEY,
@@ -331,12 +322,13 @@ async fn handle_chatgpt_interaction(
 
 async fn get_interaction_from_table(
     tables: &aws_sdk_dynamodb::Client,
+    table_name: &str,
     key: &str,
 ) -> Result<InteractionValue, anyhow::Error> {
     log::info!("cache miss for interaction: {}", &key);
     let response = tables
         .get_item()
-        .table_name(CONFIG_INTERACTION_TABLE)
+        .table_name(table_name)
         .key(db::HASH_KEY, AttributeValue::S(key.to_owned()))
         .send()
         .await?;
@@ -371,15 +363,26 @@ async fn handle_message_button_press(
             Some(redis) => {
                 let redis = &mut redis.lock().await;
 
-                match redis
-                    .get::<_, String>(format!("{}{}", CONFIG_REDIS_CACHE_KEY_PREFIX, &m.custom_id))
-                    .await
-                {
+                match redis.get::<_, String>(&m.custom_id).await {
                     Ok(interaction_value) => serde_json::from_str(&interaction_value)?,
-                    Err(_) => get_interaction_from_table(&ctx.tables, &m.custom_id).await?,
+                    Err(_) => {
+                        get_interaction_from_table(
+                            &ctx.tables,
+                            &ctx.config.interaction_table_name,
+                            &m.custom_id,
+                        )
+                        .await?
+                    }
                 }
             }
-            None => get_interaction_from_table(&ctx.tables, &m.custom_id).await?,
+            None => {
+                get_interaction_from_table(
+                    &ctx.tables,
+                    &ctx.config.interaction_table_name,
+                    &m.custom_id,
+                )
+                .await?
+            }
         }
     };
 
@@ -425,8 +428,12 @@ async fn handle_message_button_press(
 }
 
 #[derive(Deserialize, Debug)]
-#[serde(rename_all = "PascalCase")]
 pub struct BotConfig {
+    pub interaction_table_name: String,
+    pub interaction_table_user_index_name: String,
+    pub redis_connection_string: String,
+
+    #[serde(rename = "ApimApiKey")]
     pub apim_api_key: String,
     #[cfg(debug_assertions)]
     #[serde(rename = "DiscordAuthToken-dev")]
@@ -453,21 +460,22 @@ async fn main() -> anyhow::Result<()> {
     let secret_manager_source = SecretsManagerSource::new("Replybot-".to_owned(), secrets);
     let config = Config::builder()
         .add_async_source(secret_manager_source)
+        .add_source(Environment::default().prefix("REPLYBOT"))
         .build()
         .await?
         .try_deserialize::<BotConfig>()?;
 
     let tables = aws_sdk_dynamodb::Client::new(&shared_config);
 
-    let client = redis::Client::open(CONFIG_REDIS_CONNECTION)?;
+    let client = redis::Client::open(config.redis_connection_string.clone())?;
     let redis = match client.get_async_connection().await {
         Ok(redis) => Some(Mutex::new(redis)),
         Err(_) => None,
     };
     log::info!("connected to redis: {}", redis.is_some());
 
-    let discord_token = config.discord_token;
-    let api_key = config.apim_api_key;
+    let discord_token = config.discord_token.clone();
+    let api_key = config.apim_api_key.clone();
 
     let mut shard = Shard::new(
         ShardId::ONE,
@@ -490,6 +498,7 @@ async fn main() -> anyhow::Result<()> {
         http_client,
         redis,
         tables,
+        config,
     });
 
     let cache = InMemoryCache::builder()

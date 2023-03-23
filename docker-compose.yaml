@@ -1,14 +1,17 @@
 version: '3.8'
 services:
   replybot:
-    environment:
-      - AWS_ACCESS_KEY_ID
-      - AWS_SECRET_ACCESS_KEY
     build:
       context: .
       args:
         BUILD_MODE: dev
         BUILD_DIRECTORY: debug
+    environment:
+      - AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY
+      - REPLYBOT_REDIS_CONNECTION_STRING=redis://replybot-cache/
+      - REPLYBOT_INTERACTION_TABLE_NAME=ReplybotInteraction
+      - REPLYBOT_INTERACTION_TABLE_USER_INDEX_NAME=DiscordIdIndex
     container_name: replybot-task
     depends_on:
       - redis
