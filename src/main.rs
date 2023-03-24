@@ -2,7 +2,7 @@ use anyhow::{bail, Context};
 use aws_sdk_dynamodb::model::AttributeValue;
 use config::{Config, Environment};
 use foundation::aws;
-use foundation::config::config_sources::SecretsManagerSource;
+use foundation::config::sources::secret_manager::SecretsManagerSource;
 use foundation::constants::{OPENAI_API_BASE_URL, X_API_KEY_HEADER};
 use foundation::types::openai::{
     ChatMessage, OpenAIChatCompletionRequest, OpenAIChatCompletionResponse,
