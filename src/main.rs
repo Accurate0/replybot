@@ -457,7 +457,7 @@ async fn main() -> anyhow::Result<()> {
     let shared_config = aws::config::get_shared_config().await;
     let secrets = aws_sdk_secretsmanager::Client::new(&shared_config);
 
-    let secret_manager_source = SecretsManagerSource::new("Replybot-".to_owned(), secrets);
+    let secret_manager_source = SecretsManagerSource::new("Replybot-", secrets);
     let config = Config::builder()
         .add_async_source(secret_manager_source)
         .add_source(Environment::default().prefix("REPLYBOT"))
