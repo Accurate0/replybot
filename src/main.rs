@@ -1,5 +1,5 @@
 use anyhow::{bail, Context};
-use aws_sdk_dynamodb::model::AttributeValue;
+use aws_sdk_dynamodb::types::AttributeValue;
 use config::{Config, Environment};
 use foundation::aws;
 use foundation::config::sources::secret_manager::SecretsManagerSource;
