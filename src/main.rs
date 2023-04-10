@@ -50,6 +50,7 @@ mod db {
 pub const CACHE_KEY_PREFIX: &str = "REPLYBOT";
 pub const BUTTON_THRESHOLD: usize = 1000;
 pub const MAX_DISCORD_MESSAGE_LEN: usize = 2000;
+pub const REDIS_KEY_TTL: usize = 86400;
 
 #[derive(Debug)]
 pub struct BotContext {
@@ -240,9 +241,10 @@ async fn handle_chatgpt_interaction(
                 let redis = &mut redis.lock().await;
 
                 redis
-                    .set(
+                    .set_ex(
                         &cache_key,
                         serde_json::to_string(interaction_value).context("could not serialize")?,
+                        REDIS_KEY_TTL,
                     )
                     .await?;
 
