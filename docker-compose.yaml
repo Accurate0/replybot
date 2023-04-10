@@ -9,7 +9,7 @@ services:
     environment:
       - AWS_ACCESS_KEY_ID
       - AWS_SECRET_ACCESS_KEY
-      - REPLYBOT_REDIS_CONNECTION_STRING=redis://replybot-cache/
+      - REPLYBOT_REDIS_CONNECTION_STRING=rediss://:ee75229b88d04c33af3b1e7a1f2bc51b@lenient-anemone-30211.upstash.io:30211
       - REPLYBOT_INTERACTION_TABLE_NAME=ReplybotInteraction
       - REPLYBOT_INTERACTION_TABLE_USER_INDEX_NAME=DiscordIdIndex
     container_name: replybot-task

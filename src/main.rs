@@ -18,6 +18,7 @@ use redis::AsyncCommands;
 use reqwest::ClientBuilder;
 use reqwest_middleware::ClientWithMiddleware;
 use serde::{Deserialize, Serialize};
+use std::fmt::Display;
 use std::pin::Pin;
 use std::{error::Error, sync::Arc};
 use tracing::instrument;
@@ -46,13 +47,14 @@ mod db {
     pub const RAW_RESPONSE_KEY: &str = "raw_response";
 }
 
+pub const CACHE_KEY_PREFIX: &str = "REPLYBOT";
 pub const BUTTON_THRESHOLD: usize = 1000;
 pub const MAX_DISCORD_MESSAGE_LEN: usize = 2000;
 
 #[derive(Debug)]
 pub struct BotContext {
     pub http_client: ClientWithMiddleware,
-    pub redis: Option<Mutex<redis::aio::Connection>>,
+    pub redis: Option<Mutex<redis::aio::ConnectionManager>>,
     pub tables: aws_sdk_dynamodb::Client,
     pub config: BotConfig,
 }
@@ -66,6 +68,10 @@ pub struct InteractionValue {
 
 lazy_static! {
     static ref RNG: Arc<Mutex<SmallRng>> = Arc::new(Mutex::new(SmallRng::from_entropy()));
+}
+
+fn get_cache_key(suffix: impl Display) -> String {
+    format!("{}_{}", CACHE_KEY_PREFIX, suffix)
 }
 
 #[instrument(skip(http))]
@@ -229,18 +235,18 @@ async fn handle_chatgpt_interaction(
     let update_redis = async {
         match &bot_ctx.redis {
             Some(redis) => {
-                let id = id.clone();
-                log::info!("setting key {} in redis", id);
+                let cache_key = get_cache_key(id.clone());
+                log::info!("setting key {} in redis", cache_key);
                 let redis = &mut redis.lock().await;
 
                 redis
                     .set(
-                        &id,
+                        &cache_key,
                         serde_json::to_string(interaction_value).context("could not serialize")?,
                     )
                     .await?;
 
-                log::info!("[completed] setting key {} in redis", id);
+                log::info!("[completed] setting key {} in redis", cache_key);
             }
             None => {}
         }
@@ -362,8 +368,8 @@ async fn handle_message_button_press(
         match &ctx.redis {
             Some(redis) => {
                 let redis = &mut redis.lock().await;
-
-                match redis.get::<_, String>(&m.custom_id).await {
+                let cache_key = get_cache_key(&m.custom_id);
+                match redis.get::<_, String>(cache_key).await {
                     Ok(interaction_value) => serde_json::from_str(&interaction_value)?,
                     Err(_) => {
                         get_interaction_from_table(
@@ -468,9 +474,12 @@ async fn main() -> anyhow::Result<()> {
     let tables = aws_sdk_dynamodb::Client::new(&shared_config);
 
     let client = redis::Client::open(config.redis_connection_string.clone())?;
-    let redis = match client.get_async_connection().await {
+    let redis = match client.get_tokio_connection_manager().await {
         Ok(redis) => Some(Mutex::new(redis)),
-        Err(_) => None,
+        Err(e) => {
+            log::error!("error connecting to redis: {}", e);
+            None
+        }
     };
     log::info!("connected to redis: {}", redis.is_some());
 
