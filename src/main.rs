@@ -9,7 +9,7 @@ use foundation::types::openai::{
 };
 use foundation::util::get_uuid;
 use futures::lock::Mutex;
-use futures::{Future, FutureExt};
+use futures::FutureExt;
 use http::HeaderMap;
 use lazy_static::lazy_static;
 use rand::rngs::SmallRng;
@@ -19,7 +19,6 @@ use reqwest::ClientBuilder;
 use reqwest_middleware::ClientWithMiddleware;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
-use std::pin::Pin;
 use std::{error::Error, sync::Arc};
 use tracing::instrument;
 use twilight_cache_inmemory::{InMemoryCache, ResourceType};
@@ -233,67 +232,55 @@ async fn handle_chatgpt_interaction(
         prompt,
     };
 
-    let update_redis = async {
-        match &bot_ctx.redis {
-            Some(redis) => {
-                let cache_key = get_cache_key(id.clone());
-                log::info!("setting key {} in redis", cache_key);
-                let redis = &mut redis.lock().await;
+    match &bot_ctx.redis {
+        Some(redis) => {
+            let cache_key = get_cache_key(id.clone());
+            log::info!("setting key {} in redis", cache_key);
+            let redis = &mut redis.lock().await;
 
-                redis
-                    .set_ex(
-                        &cache_key,
-                        serde_json::to_string(interaction_value).context("could not serialize")?,
-                        REDIS_KEY_TTL,
-                    )
-                    .await?;
+            match redis
+                .set_ex::<_, _, ()>(
+                    &cache_key,
+                    serde_json::to_string(interaction_value).context("could not serialize")?,
+                    REDIS_KEY_TTL,
+                )
+                .await
+            {
+                Ok(_) => {}
+                Err(e) => log::error!("error setting redis key: {}", e),
+            };
 
-                log::info!("[completed] setting key {} in redis", cache_key);
-            }
-            None => {}
+            log::info!("[completed] setting key {} in redis", cache_key);
         }
-
-        Ok::<(), anyhow::Error>(())
-    };
-
-    let update_table = async {
-        log::info!("setting key {} in dynamo", id);
-        bot_ctx
-            .tables
-            .put_item()
-            .table_name(&ctx.data.config.interaction_table_name)
-            .item(db::HASH_KEY, AttributeValue::S(id.clone()))
-            .item(
-                db::INTERACTION_VALUE_KEY,
-                AttributeValue::M(serde_dynamo::to_item(interaction_value)?),
-            )
-            .item(
-                db::USER_SNOWFLAKE_KEY,
-                AttributeValue::S(
-                    ctx.interaction
-                        .author_id()
-                        .context("no user id")?
-                        .to_string(),
-                ),
-            )
-            .item(
-                db::RAW_RESPONSE_KEY,
-                AttributeValue::M(serde_dynamo::to_item(original_response)?),
-            )
-            .send()
-            .await?;
-        log::info!("[completed] setting key {} in dynamo", id);
-        Ok::<(), anyhow::Error>(())
-    };
-
-    #[allow(clippy::type_complexity)]
-    let futures: [Pin<Box<dyn Future<Output = Result<(), anyhow::Error>> + Send>>; 2] =
-        [Box::pin(update_redis), Box::pin(update_table)];
-
-    let completed = futures::future::join_all(futures).await;
-    for task in completed {
-        task?
+        None => {}
     }
+
+    log::info!("setting key {} in dynamo", id);
+    bot_ctx
+        .tables
+        .put_item()
+        .table_name(&ctx.data.config.interaction_table_name)
+        .item(db::HASH_KEY, AttributeValue::S(id.clone()))
+        .item(
+            db::INTERACTION_VALUE_KEY,
+            AttributeValue::M(serde_dynamo::to_item(interaction_value)?),
+        )
+        .item(
+            db::USER_SNOWFLAKE_KEY,
+            AttributeValue::S(
+                ctx.interaction
+                    .author_id()
+                    .context("no user id")?
+                    .to_string(),
+            ),
+        )
+        .item(
+            db::RAW_RESPONSE_KEY,
+            AttributeValue::M(serde_dynamo::to_item(original_response)?),
+        )
+        .send()
+        .await?;
+    log::info!("[completed] setting key {} in dynamo", id);
 
     if response.len() > BUTTON_THRESHOLD {
         let chunk = format!(
