@@ -426,6 +426,8 @@ async fn handle_message_button_press(
 pub struct BotConfig {
     pub interaction_table_name: String,
     pub interaction_table_user_index_name: String,
+
+    #[serde(rename = "RedisConnectionString")]
     pub redis_connection_string: String,
 
     #[serde(rename = "ApimApiKey")]
@@ -452,9 +454,11 @@ async fn main() -> anyhow::Result<()> {
     let shared_config = aws::config::get_shared_config().await;
     let secrets = aws_sdk_secretsmanager::Client::new(&shared_config);
 
-    let secret_manager_source = SecretsManagerSource::new("Replybot-", secrets);
+    let secret_manager_source = SecretsManagerSource::new("Replybot-", secrets.clone());
+    let shared_secrets_source = SecretsManagerSource::new("Shared-", secrets.clone());
     let config = Config::builder()
         .add_async_source(secret_manager_source)
+        .add_async_source(shared_secrets_source)
         .add_source(Environment::default().prefix("REPLYBOT"))
         .build()
         .await?

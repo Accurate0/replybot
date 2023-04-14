@@ -8,7 +8,7 @@ anyhow = "1.0.70"
 fern = "0.6.2"
 futures = "0.3.28"
 log = "0.4.17"
-serde = "1.0.159"
+serde = "1.0.160"
 tokio = { version = "1.27.0", features = ["rt", "macros", "rt-multi-thread"] }
 twilight-cache-inmemory = "0.15"
 twilight-gateway = "0.15"
@@ -22,7 +22,7 @@ reqwest-tracing = "0.4.1"
 reqwest-retry = "0.2.2"
 http = "0.2.9"
 rand = { version = "0.8.5", features = ["small_rng"] }
-serde_json = "1.0.95"
+serde_json = "1.0.96"
 lazy_static = "1.4.0"
 foundation = { git = "https://github.com/Accurate0/foundation.git", features = [
     "aws",
@@ -35,15 +35,18 @@ redis = { version = "0.23.0", features = [
     "tokio-rustls-comp",
     "connection-manager",
 ] }
-aws-sdk-secretsmanager = "0.25.1"
-aws-sdk-dynamodb = "0.25.1"
-serde_dynamo = { version = "4.2.0", features = ["aws-sdk-dynamodb+0_25"] }
-cached = { version = "0.42.0" }
+aws-sdk-secretsmanager = "0.26.0"
+aws-sdk-dynamodb = "0.26.0"
+serde_dynamo = { version = "4.2.0", features = ["aws-sdk-dynamodb+0_26"] }
+cached = { version = "0.43.0" }
 tracing = "0.1.37"
 config = "0.13.3"
 
 # [patch."https://github.com/Accurate0/foundation.git"]
 # foundation = { path = "/home/anurag/Projects/foundation" }
+
+[patch.crates-io]
+serde_dynamo = { git = "https://github.com/Accurate0/serde_dynamo.git", branch = "feature/dynamodb-26-support" }
 
 [[bin]]
 name = "replybot"
