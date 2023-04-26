@@ -427,17 +427,13 @@ pub struct BotConfig {
     pub interaction_table_name: String,
     pub interaction_table_user_index_name: String,
 
-    #[serde(rename = "RedisConnectionString")]
+    #[serde(rename = "redisconnectionstring")]
     pub redis_connection_string: String,
 
-    #[serde(rename = "ApimApiKey")]
+    #[serde(rename = "apimapikey")]
     pub apim_api_key: String,
-    #[cfg(debug_assertions)]
-    #[serde(rename = "DiscordAuthToken-dev")]
-    pub discord_token: String,
 
-    #[cfg(not(debug_assertions))]
-    #[serde(rename = "DiscordAuthToken")]
+    #[serde(rename = "discordauthtoken")]
     pub discord_token: String,
 }
 

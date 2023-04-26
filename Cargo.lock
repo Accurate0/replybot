@@ -990,8 +990,8 @@ dependencies = [
 
 [[package]]
 name = "foundation"
-version = "0.39.0"
-source = "git+https://github.com/Accurate0/foundation.git#f9a9e8366ee0d84e8e89cb6ace35212af022350a"
+version = "0.41.0"
+source = "git+https://github.com/Accurate0/foundation.git#86d05c1ce8d286704b36501e8bdf38285f1c4479"
 dependencies = [
  "anyhow",
  "async-trait",
