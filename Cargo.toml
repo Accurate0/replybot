@@ -9,7 +9,7 @@ fern = "0.6.2"
 futures = "0.3.28"
 log = "0.4.17"
 serde = "1.0.160"
-tokio = { version = "1.27.0", features = ["rt", "macros", "rt-multi-thread"] }
+tokio = { version = "1.28.0", features = ["rt", "macros", "rt-multi-thread"] }
 twilight-cache-inmemory = "0.15"
 twilight-gateway = "0.15"
 twilight-http = "0.15"
@@ -39,7 +39,7 @@ aws-sdk-secretsmanager = "0.26.0"
 aws-sdk-dynamodb = "0.26.0"
 serde_dynamo = { version = "4.2.1", features = ["aws-sdk-dynamodb+0_26"] }
 cached = { version = "0.43.0" }
-tracing = "0.1.37"
+tracing = "0.1.38"
 config = "0.13.3"
 
 # [patch."https://github.com/Accurate0/foundation.git"]

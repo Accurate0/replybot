@@ -455,7 +455,8 @@ async fn main() -> anyhow::Result<()> {
     let secrets = aws_sdk_secretsmanager::Client::new(&shared_config);
 
     let secret_manager_source = SecretsManagerSource::new("Replybot-", secrets.clone());
-    let shared_secrets_source = SecretsManagerSource::new("Shared-", secrets.clone());
+    let shared_secrets_source =
+        SecretsManagerSource::new("Shared-", secrets.clone()).with_required(false);
     let config = Config::builder()
         .add_async_source(secret_manager_source)
         .add_async_source(shared_secrets_source)
