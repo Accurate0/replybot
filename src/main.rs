@@ -26,8 +26,6 @@ use twilight_gateway::{Event, EventType, Shard, ShardId};
 use twilight_http::Client as DiscordHttpClient;
 use twilight_model::channel::message::component::{Button, ButtonStyle};
 use twilight_model::channel::message::MessageFlags;
-use twilight_model::gateway::payload::outgoing::UpdatePresence;
-use twilight_model::gateway::presence::{ActivityType, MinimalActivity, Status};
 use twilight_model::gateway::Intents;
 use twilight_model::user::User;
 use twilight_util::builder::embed::{EmbedBuilder, EmbedFieldBuilder, ImageSource};
