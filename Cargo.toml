@@ -47,3 +47,4 @@ config = "0.13.3"
 
 [[bin]]
 name = "replybot"
+path = "src/main.rs"
