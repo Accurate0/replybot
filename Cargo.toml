@@ -4,43 +4,42 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-anyhow = "1.0.70"
+anyhow = "1.0.75"
 fern = "0.6.2"
 futures = "0.3.28"
-log = "0.4.17"
-serde = "1.0.160"
-tokio = { version = "1.28.0", features = ["rt", "macros", "rt-multi-thread"] }
-twilight-cache-inmemory = "0.15"
+log = "0.4.20"
+serde = "1.0.183"
+tokio = { version = "1.32.0", features = ["rt", "macros", "rt-multi-thread"] }
+twilight-cache-inmemory = "0.15.2"
 twilight-gateway = "0.15"
 twilight-http = "0.15"
 openssl = { version = "0.10", features = ["vendored"] }
-twilight-model = "0.15"
-twilight-util = { version = "0.15.1", features = ["builder"] }
-reqwest = { version = "0.11.16", features = ["json", "gzip"] }
-reqwest-middleware = "0.2.1"
-reqwest-tracing = "0.4.1"
+twilight-model = "0.15.2"
+twilight-util = { version = "0.15.2", features = ["builder"] }
+reqwest = { version = "0.11.18", features = ["json", "gzip"] }
+reqwest-middleware = "0.2.3"
+reqwest-tracing = "0.4.5"
 reqwest-retry = "0.2.2"
 http = "0.2.9"
 rand = { version = "0.8.5", features = ["small_rng"] }
-serde_json = "1.0.96"
+serde_json = "1.0.105"
 lazy_static = "1.4.0"
-foundation = { git = "https://github.com/Accurate0/foundation.git", features = [
-    "aws",
-    "http",
-] }
-zephyrus = "0.9.0"
-redis = { version = "0.23.0", features = [
+zephyrus = "0.10.0"
+redis = { version = "0.23.2", features = [
     "aio",
     "tokio-comp",
     "tokio-rustls-comp",
     "connection-manager",
 ] }
-aws-sdk-secretsmanager = "0.26.0"
-aws-sdk-dynamodb = "0.26.0"
-serde_dynamo = { version = "4.2.1", features = ["aws-sdk-dynamodb+0_26"] }
-cached = { version = "0.43.0" }
-tracing = "0.1.38"
+aws-sdk-secretsmanager = "0.29.0"
+aws-sdk-dynamodb = "0.29.0"
+serde_dynamo = { version = "4.2.4", features = ["aws-sdk-dynamodb+0_29"] }
+cached = { version = "0.44.0" }
+tracing = "0.1.37"
 config = "0.13.3"
+aws-config = "0.56.0"
+async-trait = "0.1.73"
+uuid = { version = "1.4.1", features = ["v4"] }
 
 # [patch."https://github.com/Accurate0/foundation.git"]
 # foundation = { path = "/home/anurag/Projects/foundation" }

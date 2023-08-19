@@ -1,13 +1,7 @@
 use anyhow::{bail, Context};
+use aws_config::retry::RetryConfig;
 use aws_sdk_dynamodb::types::AttributeValue;
 use config::{Config, Environment};
-use foundation::aws;
-use foundation::config::sources::secret_manager::SecretsManagerSource;
-use foundation::constants::{OPENAI_API_BASE_URL, X_API_KEY_HEADER};
-use foundation::types::openai::{
-    ChatMessage, OpenAIChatCompletionRequest, OpenAIChatCompletionResponse,
-};
-use foundation::util::get_uuid;
 use futures::lock::Mutex;
 use futures::FutureExt;
 use http::HeaderMap;
@@ -17,6 +11,9 @@ use rand::SeedableRng;
 use redis::AsyncCommands;
 use reqwest::ClientBuilder;
 use reqwest_middleware::ClientWithMiddleware;
+use reqwest_retry::policies::ExponentialBackoff;
+use reqwest_retry::RetryTransientMiddleware;
+use reqwest_tracing::TracingMiddleware;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use std::{error::Error, sync::Arc};
@@ -30,12 +27,20 @@ use twilight_model::gateway::Intents;
 use twilight_model::user::User;
 use twilight_util::builder::embed::{EmbedBuilder, EmbedFieldBuilder, ImageSource};
 use twilight_util::builder::InteractionResponseDataBuilder;
+use types::{ChatMessage, OpenAIChatCompletionRequest, OpenAIChatCompletionResponse};
+use uuid::Uuid;
 use zephyrus::framework::DefaultError;
 use zephyrus::prelude::*;
 use zephyrus::twilight_exports::{
     ActionRow, Interaction, InteractionData, InteractionResponse, InteractionResponseType,
     InteractionType,
 };
+
+use crate::source::SecretsManagerSource;
+
+mod extensions;
+mod source;
+mod types;
 
 mod db {
     pub const HASH_KEY: &str = "hash";
@@ -78,7 +83,7 @@ async fn make_openai_reqest(
     prompt: &str,
 ) -> Result<OpenAIChatCompletionResponse, anyhow::Error> {
     let response = http
-        .post(format!("{OPENAI_API_BASE_URL}/chat/completions"))
+        .post("https://api.openai.com/v1/chat/completions".to_string())
         .json(&OpenAIChatCompletionRequest {
             model: "gpt-3.5-turbo".to_owned(),
             max_tokens: None,
@@ -110,7 +115,7 @@ async fn handle_stats_interaction(
     ctx: &SlashContext<Arc<BotContext>>,
     #[description = "check julian"] user: Option<User>,
 ) -> DefaultCommandResult {
-    ctx.acknowledge().await?;
+    ctx.defer(false).await?;
 
     let user = user.unwrap_or(
         ctx.interaction
@@ -212,7 +217,7 @@ async fn handle_chatgpt_interaction(
     ctx: &SlashContext<Arc<BotContext>>,
     #[description = "say what"] prompt: String,
 ) -> DefaultCommandResult {
-    ctx.acknowledge().await?;
+    ctx.defer(false).await?;
 
     let bot_ctx = ctx.data;
     let original_response = make_openai_reqest(&bot_ctx.http_client, &prompt).await?;
@@ -224,7 +229,7 @@ async fn handle_chatgpt_interaction(
         .content
         .clone();
 
-    let id = get_uuid();
+    let id = Uuid::new_v4().as_hyphenated().to_string();
     let interaction_value = &InteractionValue {
         openai_response: response.clone(),
         prompt,
@@ -428,24 +433,50 @@ pub struct BotConfig {
     #[serde(rename = "redisconnectionstring")]
     pub redis_connection_string: String,
 
-    #[serde(rename = "apimapikey")]
-    pub apim_api_key: String,
+    #[serde(rename = "openaikey")]
+    pub openai_api_key: String,
 
     #[serde(rename = "discordauthtoken")]
     pub discord_token: String,
 }
 
+fn init_logger() {
+    let cfg = fern::Dispatch::new()
+        .format(|out, message, record| {
+            out.finish(format_args!(
+                "[{}][{}] {}",
+                record.level(),
+                record.target(),
+                message
+            ))
+        })
+        .level(log::LevelFilter::Info);
+
+    let cfg = cfg
+        .level_for(
+            "aws_smithy_http_tower::parse_response",
+            log::LevelFilter::Warn,
+        )
+        .level_for(
+            "aws_config::default_provider::credentials",
+            log::LevelFilter::Warn,
+        );
+
+    cfg.chain(std::io::stdout())
+        .apply()
+        .context("failed to set up logger")
+        .unwrap();
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    foundation::log::init_logger(
-        log::LevelFilter::Info,
-        &[
-            "twilight_http_ratelimiting::in_memory::bucket",
-            "twilight_gateway::shard",
-        ],
-    );
+    init_logger();
 
-    let shared_config = aws::config::get_shared_config().await;
+    let shared_config = aws_config::from_env()
+        .region("ap-southeast-2")
+        .retry_config(RetryConfig::standard())
+        .load()
+        .await;
     let secrets = aws_sdk_secretsmanager::Client::new(&shared_config);
 
     let secret_manager_source = SecretsManagerSource::new("Replybot-", secrets.clone());
@@ -472,7 +503,6 @@ async fn main() -> anyhow::Result<()> {
     log::info!("connected to redis: {}", redis.is_some());
 
     let discord_token = config.discord_token.clone();
-    let api_key = config.apim_api_key.clone();
 
     let mut shard = Shard::new(
         ShardId::ONE,
@@ -483,12 +513,18 @@ async fn main() -> anyhow::Result<()> {
     let discord_http = Arc::new(DiscordHttpClient::new(discord_token.to_owned()));
 
     let mut headers = HeaderMap::new();
-    headers.append(X_API_KEY_HEADER, api_key.parse()?);
+    headers.append(
+        "Authorization",
+        format!("Bearer {}", config.openai_api_key).parse()?,
+    );
     headers.append("Content-Type", "application/json".parse()?);
 
-    let http_client = foundation::http::get_default_middleware(
+    let retry_policy = ExponentialBackoff::builder().build_with_max_retries(2);
+    let http_client = reqwest_middleware::ClientBuilder::new(
         ClientBuilder::new().default_headers(headers).build()?,
     )
+    .with(RetryTransientMiddleware::new_with_policy(retry_policy))
+    .with(TracingMiddleware::default())
     .build();
 
     let bot_context = Arc::new(BotContext {
