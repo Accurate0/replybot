@@ -16,6 +16,7 @@ use reqwest_retry::RetryTransientMiddleware;
 use reqwest_tracing::TracingMiddleware;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
+use std::time::Duration;
 use std::{error::Error, sync::Arc};
 use tracing::instrument;
 use twilight_cache_inmemory::{InMemoryCache, ResourceType};
@@ -53,6 +54,8 @@ pub const CACHE_KEY_PREFIX: &str = "REPLYBOT";
 pub const BUTTON_THRESHOLD: usize = 1000;
 pub const MAX_DISCORD_MESSAGE_LEN: usize = 2000;
 pub const REDIS_KEY_TTL: usize = 86400;
+pub const UPTIME_PUSH_URL: &str =
+    "https://uptime.anurag.sh/api/push/GQFBqWEFgG?status=up&msg=OK&ping=";
 
 #[derive(Debug)]
 pub struct BotContext {
@@ -528,7 +531,7 @@ async fn main() -> anyhow::Result<()> {
     .build();
 
     let bot_context = Arc::new(BotContext {
-        http_client,
+        http_client: http_client.clone(),
         redis,
         tables,
         config,
@@ -555,6 +558,14 @@ async fn main() -> anyhow::Result<()> {
     if let Err(e) = framework.register_global_commands().await {
         log::error!("error registering commands: {}", e);
     };
+
+    let http_client = http_client.clone();
+    tokio::spawn(async move {
+        loop {
+            let _ = http_client.get(UPTIME_PUSH_URL).send().await;
+            tokio::time::sleep(Duration::from_secs(60)).await;
+        }
+    });
 
     while let Ok(event) = shard.next_event().await {
         cache.update(&event);
