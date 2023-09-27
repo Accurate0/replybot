@@ -88,7 +88,7 @@ async fn make_openai_reqest(
     let response = http
         .post("https://api.openai.com/v1/chat/completions".to_string())
         .json(&OpenAIChatCompletionRequest {
-            model: "gpt-3.5-turbo".to_owned(),
+            model: "gpt-4".to_owned(),
             max_tokens: None,
             messages: [ChatMessage {
                 role: "user".to_owned(),
