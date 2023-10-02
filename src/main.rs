@@ -140,7 +140,7 @@ async fn handle_stats_interaction(
         .await?;
 
     // price $0.002 / 1K tokens
-    let price_per_token = 2e-6_f64;
+    let price_per_token = 0.00003;
 
     let all_responses = response
         .items()
