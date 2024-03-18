@@ -1,4 +1,4 @@
-FROM rust:1.71.0 AS chef
+FROM rust:1.74.0 AS chef
 
 RUN rustup target add x86_64-unknown-linux-musl
 
