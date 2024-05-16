@@ -81,14 +81,14 @@ fn get_cache_key(suffix: impl Display) -> String {
 }
 
 #[instrument(skip(http))]
-async fn make_openai_reqest(
+async fn make_openai_request(
     http: &ClientWithMiddleware,
     prompt: &str,
 ) -> Result<OpenAIChatCompletionResponse, anyhow::Error> {
     let response = http
         .post("https://api.openai.com/v1/chat/completions".to_string())
         .json(&OpenAIChatCompletionRequest {
-            model: "gpt-4".to_owned(),
+            model: "gpt-4o".to_owned(),
             max_tokens: None,
             messages: [
                 ChatMessage {
@@ -234,7 +234,7 @@ async fn handle_chatgpt_interaction(
     ctx.defer(false).await?;
 
     let bot_ctx = ctx.data;
-    let original_response = make_openai_reqest(&bot_ctx.http_client, &prompt).await?;
+    let original_response = make_openai_request(&bot_ctx.http_client, &prompt).await?;
     let response = original_response
         .choices
         .first()
