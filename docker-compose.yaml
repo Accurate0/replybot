@@ -6,15 +6,6 @@ services:
     environment:
       - AWS_ACCESS_KEY_ID
       - AWS_SECRET_ACCESS_KEY
-      - REPLYBOT_REDIS_CONNECTION_STRING=redis://replybot-cache/
+      - REPLYBOT_REDIS_CONNECTION_STRING
       - REPLYBOT_INTERACTION_TABLE_NAME=ReplybotInteraction
       - REPLYBOT_INTERACTION_TABLE_USER_INDEX_NAME=DiscordIdIndex
-    container_name: replybot-task
-    depends_on:
-      - redis
-    links:
-      - "redis:replybot-cache"
-
-  redis:
-    image: redis:alpine
-    container_name: replybot-cache
