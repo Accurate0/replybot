@@ -22,5 +22,3 @@ spec:
           envFrom:
             - secretRef:
                 name: replybot-managed-secrets
-          ports:
-            - containerPort: 8000
