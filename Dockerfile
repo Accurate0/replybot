@@ -1,5 +1,5 @@
-ARG RUST_VERSION=1.79.0
-ARG BINARY_NAME=reploybot
+ARG RUST_VERSION=1.80.0
+ARG BINARY_NAME=replybot
 
 FROM rust:${RUST_VERSION}-slim-bookworm AS builder
 ARG BINARY_NAME
@@ -33,7 +33,6 @@ RUN adduser \
 
 COPY --from=builder /app/${BINARY_NAME} /usr/local/bin/${BINARY_NAME}
 RUN chown appuser /usr/local/bin/${BINARY_NAME}
-RUN apt-get update && apt-get install -y curl
 
 USER appuser
 
@@ -41,5 +40,3 @@ WORKDIR /opt/${BINARY_NAME}
 
 RUN ln -s /usr/local/bin/${BINARY_NAME} executable
 ENTRYPOINT ["./executable"]
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 CMD [ "curl", "-f", "http://localhost:8000/health" ]
-EXPOSE 8000/tcp

@@ -7,7 +7,7 @@ use config::{AsyncSource, ConfigError, Map, ValueKind};
 pub struct SecretsManagerSource {
     pub(crate) secrets_client: aws_sdk_secretsmanager::Client,
     pub(crate) prefix: String,
-    pub(crate) seperator: Option<String>,
+    pub(crate) separator: Option<String>,
     pub(crate) required: bool,
     pub(crate) remove_prefix: bool,
 }
@@ -18,7 +18,7 @@ impl SecretsManagerSource {
         secrets_client: aws_sdk_secretsmanager::Client,
     ) -> SecretsManagerSource {
         Self {
-            seperator: None,
+            separator: None,
             secrets_client,
             prefix: prefix.to_owned(),
             required: true,
@@ -50,68 +50,64 @@ impl AsyncSource for SecretsManagerSource {
             .map_err(|e| ConfigError::Foreign(Box::new(e)))?;
 
         // need to handle nesting...
-        match secrets.secret_list() {
-            Some(secrets) => {
-                let prefix = match &self.seperator {
-                    Some(seperator) => self
-                        .prefix
-                        .strip_suffix(seperator.as_str())
-                        .unwrap_or(&self.prefix),
-                    None => &self.prefix,
-                };
+        let secrets = secrets.secret_list();
+        let prefix = match &self.separator {
+            Some(separator) => self
+                .prefix
+                .strip_suffix(separator.as_str())
+                .unwrap_or(&self.prefix),
+            None => &self.prefix,
+        };
 
-                let seperator = &self.seperator.to_owned().unwrap_or("".to_owned());
+        let separator = &self.separator.to_owned().unwrap_or("".to_owned());
 
-                let mut map = Map::default();
-                for secret in secrets {
-                    let key = secret.name();
-                    if let Some(key) = key {
-                        log::info!("grabbing secret {}", key);
-                        let value = self
-                            .secrets_client
-                            .get_secret(key)
-                            .await
-                            .map_err(|e| ConfigError::Foreign(e.into()));
+        let mut map = Map::default();
+        for secret in secrets {
+            let key = secret.name();
+            if let Some(key) = key {
+                log::info!("grabbing secret {}", key);
+                let value = self
+                    .secrets_client
+                    .get_secret(key)
+                    .await
+                    .map_err(|e| ConfigError::Foreign(e.into()));
 
-                        match value {
-                            Ok(value) => {
-                                let key = if self.remove_prefix {
-                                    key.strip_prefix(prefix).unwrap().to_owned()
-                                } else {
-                                    key.to_owned()
-                                };
+                match value {
+                    Ok(value) => {
+                        let key = if self.remove_prefix {
+                            key.strip_prefix(prefix).unwrap().to_owned()
+                        } else {
+                            key.to_owned()
+                        };
 
-                                let key = if !seperator.is_empty() {
-                                    // . is used for nesting :)
-                                    // I can't find this info in docs :)
-                                    key.replace(seperator, ".")
-                                } else {
-                                    key
-                                };
+                        let key = if !separator.is_empty() {
+                            // . is used for nesting :)
+                            // I can't find this info in docs :)
+                            key.replace(separator, ".")
+                        } else {
+                            key
+                        };
 
-                                map.insert(
-                                    key.to_lowercase(),
-                                    config::Value::new(
-                                        Some(&"SecretsManager".to_owned()),
-                                        ValueKind::String(value),
-                                    ),
-                                );
-                            }
-                            Err(e) => {
-                                log::warn!("error fetching {key}: {e}");
-                                if self.required {
-                                    return Err(e);
-                                }
-                            }
+                        map.insert(
+                            key.to_lowercase(),
+                            config::Value::new(
+                                Some(&"SecretsManager".to_owned()),
+                                ValueKind::String(value),
+                            ),
+                        );
+                    }
+                    Err(e) => {
+                        log::warn!("error fetching {key}: {e}");
+                        if self.required {
+                            return Err(e);
                         }
-                    } else {
-                        continue;
                     }
                 }
-
-                Ok(map)
+            } else {
+                continue;
             }
-            None => Ok(Map::default()),
         }
+
+        Ok(map)
     }
 }

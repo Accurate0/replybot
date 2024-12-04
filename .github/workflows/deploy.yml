@@ -53,7 +53,7 @@ jobs:
         with:
           context: .
           push: true
-          tags: ghcr.io/accurate0/replybot:latest,ghcr.io/accurate0/spotify-sync:${{ github.sha }}
+          tags: ghcr.io/accurate0/replybot:latest,ghcr.io/accurate0/replybot:${{ github.sha }}
           build-args: |
             BINARY_NAME=replybot
           cache-from: type=local,src=/tmp/.buildx-cache

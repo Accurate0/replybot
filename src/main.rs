@@ -1,5 +1,6 @@
 use anyhow::{bail, Context};
 use aws_config::retry::RetryConfig;
+use aws_config::BehaviorVersion;
 use aws_sdk_dynamodb::types::AttributeValue;
 use config::{Config, Environment};
 use futures::lock::Mutex;
@@ -52,7 +53,7 @@ mod db {
 pub const CACHE_KEY_PREFIX: &str = "REPLYBOT";
 pub const BUTTON_THRESHOLD: usize = 1000;
 pub const MAX_DISCORD_MESSAGE_LEN: usize = 2000;
-pub const REDIS_KEY_TTL: usize = 86400;
+pub const REDIS_KEY_TTL: u64 = 86400;
 
 #[derive(Debug)]
 pub struct BotContext {
@@ -152,7 +153,6 @@ async fn handle_stats_interaction(
 
     let all_responses = response
         .items()
-        .context("must have items")?
         .iter()
         .map(
             |item| -> Result<OpenAIChatCompletionResponse, anyhow::Error> {
@@ -483,7 +483,7 @@ fn init_logger() {
 async fn main() -> anyhow::Result<()> {
     init_logger();
 
-    let shared_config = aws_config::from_env()
+    let shared_config = aws_config::defaults(BehaviorVersion::v2024_03_28())
         .region("ap-southeast-2")
         .retry_config(RetryConfig::standard())
         .load()
@@ -504,7 +504,7 @@ async fn main() -> anyhow::Result<()> {
     let tables = aws_sdk_dynamodb::Client::new(&shared_config);
 
     let client = redis::Client::open(config.redis_connection_string.clone())?;
-    let redis = match client.get_tokio_connection_manager().await {
+    let redis = match client.get_connection_manager().await {
         Ok(redis) => Some(Mutex::new(redis)),
         Err(e) => {
             log::error!("error connecting to redis: {}", e);

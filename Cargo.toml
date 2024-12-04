@@ -4,42 +4,42 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-anyhow = "1.0.75"
-fern = "0.6.2"
-futures = "0.3.28"
-log = "0.4.20"
-serde = "1.0.183"
-tokio = { version = "1.32.0", features = ["rt", "macros", "rt-multi-thread"] }
-twilight-cache-inmemory = "0.15.2"
+anyhow = "1.0.94"
+fern = "0.7.0"
+futures = "0.3.31"
+log = "0.4.22"
+serde = "1.0.215"
+tokio = { version = "1.42.0", features = ["rt", "macros", "rt-multi-thread"] }
+twilight-cache-inmemory = "0.15.4"
 twilight-gateway = "0.15"
 twilight-http = "0.15"
-openssl = { version = "0.10", features = ["vendored"] }
-twilight-model = "0.15.2"
-twilight-util = { version = "0.15.2", features = ["builder"] }
-reqwest = { version = "0.11.18", features = ["json", "gzip"] }
-reqwest-middleware = "0.2.3"
-reqwest-tracing = "0.4.5"
-reqwest-retry = "0.2.2"
-http = "0.2.9"
+twilight-model = "0.15.4"
+twilight-util = { version = "0.15.4", features = ["builder"] }
+reqwest = { version = "0.12.9", features = ["json", "gzip"] }
+reqwest-middleware = { version = "0.4.0", features = ["json"] }
+reqwest-tracing = "0.5.4"
+reqwest-retry = "0.7.0"
+http = "1.2.0"
 rand = { version = "0.8.5", features = ["small_rng"] }
-serde_json = "1.0.105"
-lazy_static = "1.4.0"
-zephyrus = "0.10.0"
-redis = { version = "0.23.2", features = [
+serde_json = "1.0.133"
+lazy_static = "1.5.0"
+zephyrus = "0.11.0"
+redis = { version = "0.27.6", features = [
     "aio",
     "tokio-comp",
     "tokio-rustls-comp",
     "connection-manager",
 ] }
-aws-sdk-secretsmanager = "0.29.0"
-aws-sdk-dynamodb = "0.29.0"
-serde_dynamo = { version = "4.2.4", features = ["aws-sdk-dynamodb+0_29"] }
-cached = { version = "0.44.0" }
-tracing = "0.1.37"
-config = "0.13.3"
-aws-config = "0.56.0"
-async-trait = "0.1.73"
-uuid = { version = "1.4.1", features = ["v4"] }
+aws-sdk-secretsmanager = "1.54.0"
+aws-sdk-dynamodb = "1.55.0"
+serde_dynamo = { version = "4.2.14", features = ["aws-sdk-dynamodb+1"] }
+cached = { version = "0.54.0" }
+tracing = "0.1.41"
+config = "0.14.1"
+aws-config = "1.5.10"
+async-trait = "0.1.83"
+uuid = { version = "1.11.0", features = ["v4"] }
+time = "0.3.37"
 
 # [patch."https://github.com/Accurate0/foundation.git"]
 # foundation = { path = "/home/anurag/Projects/foundation" }
