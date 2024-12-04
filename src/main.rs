@@ -1,4 +1,5 @@
 use anyhow::{bail, Context};
+use aws_config::environment::EnvironmentVariableCredentialsProvider;
 use aws_config::retry::RetryConfig;
 use aws_config::BehaviorVersion;
 use aws_sdk_dynamodb::types::AttributeValue;
@@ -423,6 +424,7 @@ async fn main() -> anyhow::Result<()> {
 
     let shared_config = aws_config::defaults(BehaviorVersion::v2024_03_28())
         .region("ap-southeast-2")
+        .credentials_provider(EnvironmentVariableCredentialsProvider::new())
         .retry_config(RetryConfig::standard())
         .load()
         .await;
@@ -431,6 +433,7 @@ async fn main() -> anyhow::Result<()> {
     let secret_manager_source = SecretsManagerSource::new("Replybot-", secrets.clone());
     let shared_secrets_source =
         SecretsManagerSource::new("Shared-", secrets.clone()).with_required(false);
+
     let config = Config::builder()
         .add_async_source(secret_manager_source)
         .add_async_source(shared_secrets_source)
