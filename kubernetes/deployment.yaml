@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: replybot
+  namespace: replybot
+  annotations:
+    secrets.infisical.com/auto-reload: "true"
+spec:
+  selector:
+    matchLabels:
+      app: replybot
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: replybot
+    spec:
+      containers:
+        - name: replybot
+          image: ghcr.io/accurate0/replybot:latest
+          imagePullPolicy: Always
+          envFrom:
+            - secretRef:
+                name: replybot-managed-secrets
+          ports:
+            - containerPort: 8000
