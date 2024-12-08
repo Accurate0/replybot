@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: replybot
-          image: ghcr.io/accurate0/replybot:latest
+          image: replybot:latest
           imagePullPolicy: Always
           envFrom:
             - secretRef:

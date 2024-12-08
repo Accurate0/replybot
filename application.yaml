@@ -11,8 +11,9 @@ spec:
   source:
     repoURL: https://github.com/Accurate0/replybot.git
     path: kubernetes
-    directory:
-      include: "*.yaml"
+    kustomize:
+      images:
+        - replybot=ghcr.io/accurate0/replybot:${ARGOCD_APP_REVISION}
   destination:
     server: https://kubernetes.default.svc
     namespace: replybot
