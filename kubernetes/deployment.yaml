@@ -15,6 +15,11 @@ spec:
       labels:
         app: replybot
     spec:
+      tolerations:
+        - key: "group"
+          operator: "Equal"
+          value: "external"
+          effect: "NoSchedule"
       containers:
         - name: replybot
           image: replybot:latest
