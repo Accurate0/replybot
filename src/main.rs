@@ -18,20 +18,20 @@ use reqwest_tracing::TracingMiddleware;
 use serde::{Deserialize, Serialize};
 use std::{error::Error, sync::Arc};
 use tracing::instrument;
-use twilight_cache_inmemory::{InMemoryCache, ResourceType};
-use twilight_gateway::{Event, EventType, Shard, ShardId};
+use twilight_cache_inmemory::{DefaultCacheModels, InMemoryCache, ResourceType};
+use twilight_gateway::{Event, EventType, EventTypeFlags, Shard, ShardId, StreamExt};
 use twilight_http::Client as DiscordHttpClient;
 use twilight_model::channel::message::component::{Button, ButtonStyle};
-use twilight_model::channel::message::MessageFlags;
+use twilight_model::channel::message::{Component, MessageFlags};
 use twilight_model::gateway::Intents;
 use twilight_model::user::User;
 use twilight_util::builder::embed::{EmbedBuilder, EmbedFieldBuilder, ImageSource};
 use twilight_util::builder::InteractionResponseDataBuilder;
 use types::{ChatMessage, OpenAIChatCompletionRequest, OpenAIChatCompletionResponse};
 use uuid::Uuid;
-use zephyrus::framework::DefaultError;
-use zephyrus::prelude::*;
-use zephyrus::twilight_exports::{
+use vesper::framework::DefaultError;
+use vesper::prelude::*;
+use vesper::twilight_exports::{
     ActionRow, Interaction, InteractionData, InteractionResponse, InteractionResponseType,
     InteractionType,
 };
@@ -69,7 +69,7 @@ pub struct InteractionValue {
 }
 
 lazy_static! {
-    static ref RNG: Arc<Mutex<SmallRng>> = Arc::new(Mutex::new(SmallRng::from_entropy()));
+    static ref RNG: Arc<Mutex<SmallRng>> = Arc::new(Mutex::new(SmallRng::from_os_rng()));
 }
 
 #[instrument(skip(http))]
@@ -208,7 +208,7 @@ async fn handle_stats_interaction(
 
     ctx.interaction_client
         .update_response(&ctx.interaction.token)
-        .embeds(Some(&[embed]))?
+        .embeds(Some(&[embed]))
         .await?;
 
     Ok(())
@@ -279,21 +279,22 @@ async fn handle_chatgpt_interaction(
             label: Some("Click to see all".to_owned()),
             style: ButtonStyle::Primary,
             url: None,
+            sku_id: None,
         };
 
         let action_row = ActionRow {
-            components: [button.into()].into(),
+            components: vec![Component::Button(button)],
         };
 
         ctx.interaction_client
             .update_response(&ctx.interaction.token)
-            .content(Some(&chunk))?
-            .components(Some(&[action_row.into()]))?
+            .content(Some(&chunk))
+            .components(Some(&[action_row.into()]))
             .await?;
     } else {
         ctx.interaction_client
             .update_response(&ctx.interaction.token)
-            .content(Some(&response))?
+            .content(Some(&response))
             .await?;
     }
 
@@ -379,7 +380,7 @@ async fn handle_message_button_press(
         for chunk in chunks_iter {
             interaction_client
                 .create_followup(&interaction.token)
-                .content(chunk)?
+                .content(chunk)
                 .flags(MessageFlags::EPHEMERAL)
                 .await?;
         }
@@ -475,7 +476,7 @@ async fn main() -> anyhow::Result<()> {
         config,
     });
 
-    let cache = InMemoryCache::builder()
+    let cache = InMemoryCache::<DefaultCacheModels>::builder()
         .resource_types(ResourceType::MESSAGE | ResourceType::GUILD)
         .build();
 
@@ -497,25 +498,19 @@ async fn main() -> anyhow::Result<()> {
         log::error!("error registering commands: {}", e);
     };
 
-    while let Ok(event) = shard.next_event().await {
-        cache.update(&event);
+    while let Some(event) = shard.next_event(EventTypeFlags::all()).await {
+        let Ok(event) = event else {
+            let source = event.unwrap_err();
+            tracing::warn!(source = ?source, "error receiving event");
+
+            continue;
+        };
+
         if matches!(event.kind(), EventType::GatewayHeartbeatAck) {
             continue;
         }
 
-        match event.guild_id() {
-            Some(guild_id) => {
-                let guild_name = match cache.guild(guild_id) {
-                    Some(g) => g.name().to_owned(),
-                    None => discord_http.guild(guild_id).await?.model().await?.name,
-                };
-
-                log::info!("event {:?} from server {:?}", event.kind(), guild_name);
-            }
-            None => {
-                log::info!("event {:?}", event.kind());
-            }
-        }
+        cache.update(&event);
 
         if matches!(event.kind(), EventType::Ready) {
             log::info!("connected on shard");
