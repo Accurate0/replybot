@@ -27,7 +27,7 @@ vesper = "0.13.0"
 aws-sdk-secretsmanager = "1.61.0"
 aws-sdk-dynamodb = "1.63.0"
 serde_dynamo = { version = "4.2.14", features = ["aws-sdk-dynamodb+1"] }
-cached = { version = "0.54.0" }
+cached = { version = "0.55.0" }
 tracing = "0.1.41"
 config = "0.15.7"
 aws-config = "1.5.15"
