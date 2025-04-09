@@ -132,22 +132,27 @@ async fn handle_stats_interaction(
 
     let user_id = user.id;
     let tables = &ctx.data.tables;
-    let response = tables
+    let mut response = tables
         .query()
         .table_name(&ctx.data.config.interaction_table_name)
         .index_name(&ctx.data.config.interaction_table_user_index_name)
         .key_condition_expression("#user = :user_id")
         .expression_attribute_names("#user", db::USER_SNOWFLAKE_KEY)
         .expression_attribute_values(":user_id", AttributeValue::S(user_id.to_string()))
-        .send()
-        .await?;
+        .into_paginator()
+        .send();
+
+    let mut all_responses = Vec::new();
+    while let Some(Ok(resp)) = response.next().await {
+        all_responses.push(resp.items.unwrap_or_default());
+    }
 
     // price $0.002 / 1K tokens
-    let price_per_token = 0.00003;
+    let price_per_token = 0.00001;
 
-    let all_responses = response
-        .items()
+    let all_responses = all_responses
         .iter()
+        .flatten()
         .map(
             |item| -> Result<OpenAIChatCompletionResponse, anyhow::Error> {
                 let raw_response = item.get(db::RAW_RESPONSE_KEY);
