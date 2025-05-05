@@ -15,7 +15,7 @@ jobs:
       directory: .
       image-name: replybot
       docker-build-args: |
-        BINARY_NAME=${{ matrix.apps }}
+        BINARY_NAME=replybot
       use-rust-caching: true
 
   deploy:
