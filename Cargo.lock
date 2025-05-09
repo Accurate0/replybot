@@ -198,9 +198,9 @@ dependencies = [
 
 [[package]]
 name = "aws-sdk-dynamodb"
-version = "1.72.1"
+version = "1.74.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b14d5b5d6849d1caa7b404ea57cbe25ed8ba25c3c7d47f45bcbd5b51e098ceac"
+checksum = "3cd9a40e2d60d1e8cc16da1971f82893ef2e6d1412d4edf1b382af69c01dae2e"
 dependencies = [
  "aws-credential-types",
  "aws-runtime",
@@ -221,9 +221,9 @@ dependencies = [
 
 [[package]]
 name = "aws-sdk-secretsmanager"
-version = "1.69.0"
+version = "1.71.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dff24b4eb5d06e80d028b74ccf1c7a1d34f05f9960c5a0e8223fbb82afd905c6"
+checksum = "9328a01c5c822fadf96be02187e0944eb6059067509ed32ad1af00e18cd5eb27"
 dependencies = [
  "aws-credential-types",
  "aws-runtime",
@@ -2966,9 +2966,9 @@ dependencies = [
 
 [[package]]
 name = "tokio"
-version = "1.44.2"
+version = "1.45.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6b88822cbe49de4185e3a4cbf8321dd487cf5fe0c5c65695fef6346371e9c48"
+checksum = "2513ca694ef9ede0fb23fe71a4ee4107cb102b9dc1930f6d0fd77aae068ae165"
 dependencies = [
  "backtrace",
  "bytes",
