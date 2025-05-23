@@ -198,9 +198,9 @@ dependencies = [
 
 [[package]]
 name = "aws-sdk-dynamodb"
-version = "1.75.0"
+version = "1.77.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8b430cce50bf8a12bd77873581e9b05aaa351df3b435b8dd28319ecc71db494"
+checksum = "dfc975e44b2093f682111c971f26341f9e54458a5241e4cfef73470f8c98f71b"
 dependencies = [
  "aws-credential-types",
  "aws-runtime",
@@ -220,9 +220,9 @@ dependencies = [
 
 [[package]]
 name = "aws-sdk-secretsmanager"
-version = "1.72.0"
+version = "1.74.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6eea275b1f4bc5b5a6f278b760cf27a20c6a7db577310778790cdf4c666ded09"
+checksum = "ca681408228085cf3936cd78405996b1295e006221b7f7bf78735f5c70a78fa1"
 dependencies = [
  "aws-credential-types",
  "aws-runtime",
@@ -3327,11 +3327,13 @@ checksum = "b6c140620e7ffbb22c2dee59cafe6084a59b5ffc27a8859a5f0d494b5d52b6be"
 
 [[package]]
 name = "uuid"
-version = "1.16.0"
+version = "1.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "458f7a779bf54acc9f347480ac654f68407d3aab21269a6e3c9f922acd9e2da9"
+checksum = "3cf4199d1e5d15ddd86a694e4d0dffa9c323ce759fea589f00fef9d81cc1931d"
 dependencies = [
  "getrandom 0.3.1",
+ "js-sys",
+ "wasm-bindgen",
 ]
 
 [[package]]
