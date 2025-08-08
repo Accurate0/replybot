@@ -198,9 +198,9 @@ dependencies = [
 
 [[package]]
 name = "aws-sdk-dynamodb"
-version = "1.86.0"
+version = "1.87.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0c8564fccc46e75aa2b7efda5b74ca2b8d5ec14d63ec4b6c14d55fac39380d44"
+checksum = "b458b2d33775d82881e99b93a7bac79ca0f2d86e9ec77d823d77adcf8d5bca0b"
 dependencies = [
  "aws-credential-types",
  "aws-runtime",
@@ -220,9 +220,9 @@ dependencies = [
 
 [[package]]
 name = "aws-sdk-secretsmanager"
-version = "1.82.0"
+version = "1.83.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "210dda7303a8531f5c403a4b9e32617ae5cd0dc9ce35efe068bc5297e4f2083d"
+checksum = "0187a2df88fc7a3b80d276cc67071dce5fda510f2ab3307e863e61214c75d4c8"
 dependencies = [
  "aws-credential-types",
  "aws-runtime",
