@@ -428,7 +428,7 @@ fn init_logger() {
 async fn main() -> anyhow::Result<()> {
     init_logger();
 
-    let shared_config = aws_config::defaults(BehaviorVersion::v2024_03_28())
+    let shared_config = aws_config::defaults(BehaviorVersion::v2025_08_07())
         .region("ap-southeast-2")
         .credentials_provider(EnvironmentVariableCredentialsProvider::new())
         .retry_config(RetryConfig::standard())
